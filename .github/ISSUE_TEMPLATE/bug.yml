@@ -1,0 +1,10 @@
+name: Bug report
+description: Report a reproducible functional problem using synthetic data
+body:
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Reproduction, expected behavior and actual behavior
+      description: Include runtime and package versions. Do not include secrets or private code.
+    validations:
+      required: true
