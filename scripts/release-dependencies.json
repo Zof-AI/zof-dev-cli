@@ -8,8 +8,8 @@
       "repository": "zof-api-contract-check",
       "artifact": "zofai-api-contract-check-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-api-contract-check/releases/download/v0.1.0/zofai-api-contract-check-0.1.0.tgz",
-      "sha256": "7fee285bc7b0b70512d029c002e12e0f1e1d346b4bffcd19c7600857f186b4b5",
-      "sizeBytes": 16744
+      "sha256": "632da65c879c534dc0083ec0b785fe08efe19c76c2a20fcb4a3138439c7190b1",
+      "sizeBytes": 16742
     },
     {
       "packageName": "@zofai/change-impact",
@@ -17,7 +17,7 @@
       "repository": "zof-change-impact",
       "artifact": "zofai-change-impact-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-change-impact/releases/download/v0.1.0/zofai-change-impact-0.1.0.tgz",
-      "sha256": "7dad837a5754bd4a6b7de4a7700044c7b503c30292a3332484c795afd2328d3e",
+      "sha256": "5a9a40b9dcb7f2a02b6b4d17893bfe7a3ae1327bf53de43d138f72583b66978f",
       "sizeBytes": 19888
     },
     {
@@ -26,8 +26,8 @@
       "repository": "zof-ci-evidence",
       "artifact": "zofai-ci-evidence-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-ci-evidence/releases/download/v0.1.0/zofai-ci-evidence-0.1.0.tgz",
-      "sha256": "71748e8c00e61803b8c65a316413f702c3c1c372abf9c470bb0d1cc16785f403",
-      "sizeBytes": 15724
+      "sha256": "57a63833fa003f8c199599c6a3612f6015c140fda5a55f982a0a006d932612e4",
+      "sizeBytes": 15720
     },
     {
       "packageName": "@zofai/code-risk-score",
@@ -35,8 +35,8 @@
       "repository": "zof-code-risk-score",
       "artifact": "zofai-code-risk-score-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-code-risk-score/releases/download/v0.1.0/zofai-code-risk-score-0.1.0.tgz",
-      "sha256": "17b07704f3955f954eb27dfa2b9bc8f73f92c32a0772a50da2b9c0575ff27e6c",
-      "sizeBytes": 13936
+      "sha256": "4834e1156592e9e0539c612a75f400d5d63e12f1bc208483b411c713f76ba771",
+      "sizeBytes": 13938
     },
     {
       "packageName": "@zofai/evidence-spec",
@@ -44,7 +44,7 @@
       "repository": "zof-evidence-spec",
       "artifact": "zofai-evidence-spec-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-evidence-spec/releases/download/v0.1.0/zofai-evidence-spec-0.1.0.tgz",
-      "sha256": "d3d83c1335b801d155d17d3dc3cafd777a55f986d7a9f6023d90513970245ba5",
+      "sha256": "94dffbef977c91f19828200631d889c19bc28aff1fdefcd2b907cb3a1bc9265f",
       "sizeBytes": 25239
     },
     {
@@ -53,8 +53,8 @@
       "repository": "zof-policy-as-code",
       "artifact": "zofai-policy-as-code-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-policy-as-code/releases/download/v0.1.0/zofai-policy-as-code-0.1.0.tgz",
-      "sha256": "678ec5b300141a0861e894658478af8478e06d023c3ebf3751ccffe41e534020",
-      "sizeBytes": 12017
+      "sha256": "8edb24b6db3ff7bfb08470b9007b6b06d1873433018d9453931131d610290cf5",
+      "sizeBytes": 12018
     },
     {
       "packageName": "@zofai/schema-diff",
@@ -62,8 +62,8 @@
       "repository": "zof-schema-diff",
       "artifact": "zofai-schema-diff-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-schema-diff/releases/download/v0.1.0/zofai-schema-diff-0.1.0.tgz",
-      "sha256": "5696cdff6f79c53680fd1946ade10c1bf27eabbd20d3d9e3b56ea14d2a9faf1b",
-      "sizeBytes": 17133
+      "sha256": "73694e5c463f9e64991f9d148871a4d28efa5775390139c0484722bba0ec5a85",
+      "sizeBytes": 17131
     },
     {
       "packageName": "@zofai/test-selection",
@@ -71,8 +71,8 @@
       "repository": "zof-test-selection",
       "artifact": "zofai-test-selection-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-test-selection/releases/download/v0.1.0/zofai-test-selection-0.1.0.tgz",
-      "sha256": "9d90d9f34b5f6aa8a975ab028badda5a0b529481d057fdac8b4c90d50fa56271",
-      "sizeBytes": 12669
+      "sha256": "00ddb27ebbfd7c3d0873281785e96782732186d355b4cb12c255965fc5453093",
+      "sizeBytes": 12662
     },
     {
       "packageName": "@zofai/testgen",
@@ -80,8 +80,8 @@
       "repository": "zof-testgen",
       "artifact": "zofai-testgen-0.1.0.tgz",
       "url": "https://github.com/Zof-AI/zof-testgen/releases/download/v0.1.0/zofai-testgen-0.1.0.tgz",
-      "sha256": "2ec916515386d9242723be9f251b476e58d0513fcced41c062bd3001d5298b9d",
-      "sizeBytes": 26298
+      "sha256": "a5882343f94541c7c977755835642a4aee3b96b3f91605dd6420b62ec5572d86",
+      "sizeBytes": 26299
     }
   ]
 }
