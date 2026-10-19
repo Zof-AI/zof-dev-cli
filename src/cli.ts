@@ -1,8 +1,8 @@
 #!/usr/bin/env node
 import {resolve} from 'node:path';
-import {safeReadJson,safeReadFile,redact,serializeEvidence} from '@zof-ai/evidence-spec';
-import {formatReport as formatImpact} from '@zof-ai/change-impact';
-import {formatReport as formatPolicy} from '@zof-ai/policy-as-code';
+import {safeReadJson,safeReadFile,redact,serializeEvidence} from '@zofai/evidence-spec';
+import {formatReport as formatImpact} from '@zofai/change-impact';
+import {formatReport as formatPolicy} from '@zofai/policy-as-code';
 import {VERSION,init,verify,analyzeImpact,runTests,readEvidence,evaluatePolicy,doctor,formatVerification,compareContracts,readContract,compareSchemas,readSchema,analyzeRisk,selectTests,generateTests,readSource,normalizeReport} from './index.js';
 const help=`Zof local verification CLI ${VERSION}\nCommands: init, verify, diff, impact, test, evidence, policy, doctor, version, help\nAdditional modules: contract, schema, risk, select-tests, suggest-tests\ncontract/schema: --baseline FILE --candidate FILE [--format openapi|json-schema]\nsuggest-tests: --input CONFIG.json; evidence: --input REPORT --format junit|json|static-json\nOptions: --root DIR --base REF --head REF --changed PATH (repeatable) --json\nverify/evidence: --fail-on info|low|medium|high|critical\ntest: --allow-exec (executes only explicitly configured trusted argv commands)\nevidence: --input FILE (validate/redact existing evidence)\npolicy: --policy FILE --evidence FILE [--now ISO]\nExit 0 = success, 1 = finding/failure, 2 = invalid/missing/incomplete. No hosted uploads.`;
 export async function main(args:string[]):Promise<number>{

@@ -6,7 +6,7 @@ Start with the [source installation](../README.md#install-from-github-source). R
 
 Before releasing a new version, inspect source and Git history, dependency licenses, build outputs and every package entry. Resolve security findings; run independent negative and installation tests. Record artifact SHA256 and release commits. Maintain branch protection, private vulnerability reporting, least-privilege workflows and a protected release environment. The manual release-candidate workflow builds artifacts and does not publish automatically. Material release changes require a new review.
 
-Publish the reviewed package tarball as a GitHub Release asset. npm registry publication requires independently verified `@zof-ai` scope ownership and an authenticated publisher. Registry publication and registry install acceptance are not claimed by a GitHub release.
+Publish the reviewed package tarball as a GitHub Release asset. npm registry publication requires independently verified `@zofai` scope ownership and an authenticated publisher. Registry publication and registry install acceptance are not claimed by a GitHub release.
 
 After publication, retrieve assets anonymously, verify their checksums, install in a clean project, and execute documented examples. Check every intended distribution channel separately. Missing or unrun acceptance is not a pass. Hosted Zof integration remains unavailable until an approved public contract and real service acceptance exist.
 

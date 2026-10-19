@@ -18,8 +18,8 @@ export function validateManifest(value) {
   if (!value || value.schemaVersion !== 1 || value.release !== 'v0.1.0' || !Array.isArray(value.dependencies) || value.dependencies.length > 32) throw fail();
   const names = new Set(); let total = 0;
   for (const entry of value.dependencies) {
-    if (!entry || !/^@zof-ai\/[a-z][a-z0-9-]*$/.test(entry.packageName) || entry.version !== '0.1.0' || !/^zof-[a-z][a-z0-9-]*$/.test(entry.repository) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ARTIFACT || names.has(entry.packageName)) throw fail();
-    const artifact = `zof-ai-${entry.packageName.slice('@zof-ai/'.length)}-0.1.0.tgz`;
+    if (!entry || !/^@zofai\/[a-z][a-z0-9-]*$/.test(entry.packageName) || entry.version !== '0.1.0' || !/^zof-[a-z][a-z0-9-]*$/.test(entry.repository) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ARTIFACT || names.has(entry.packageName)) throw fail();
+    const artifact = `zofai-${entry.packageName.slice('@zofai/'.length)}-0.1.0.tgz`;
     if (entry.artifact !== artifact || entry.url !== `https://github.com/Zof-AI/${entry.repository}/releases/download/v0.1.0/${artifact}`) throw fail();
     names.add(entry.packageName); total += entry.sizeBytes;
   }

@@ -1,15 +1,15 @@
 import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {createEvidence,redact,safeWriteFiles,safeGit,runTrustedCommand,safeReadFile,safeReadJson,serializeEvidence,validateEvidence,type Evidence,type Finding} from '@zof-ai/evidence-spec';
-import {analyzeImpact,type ImpactReport} from '@zof-ai/change-impact';
-export {analyzeImpact} from '@zof-ai/change-impact';
-export {evaluatePolicy} from '@zof-ai/policy-as-code';
-export {compareContracts,readContract} from '@zof-ai/api-contract-check';
-export {compareSchemas,readSchema} from '@zof-ai/schema-diff';
-export {analyzeRisk} from '@zof-ai/code-risk-score';
-export {selectTests} from '@zof-ai/test-selection';
-export {generateTests,readSource} from '@zof-ai/testgen';
-export {normalizeReport} from '@zof-ai/ci-evidence';
+import {createEvidence,redact,safeWriteFiles,safeGit,runTrustedCommand,safeReadFile,safeReadJson,serializeEvidence,validateEvidence,type Evidence,type Finding} from '@zofai/evidence-spec';
+import {analyzeImpact,type ImpactReport} from '@zofai/change-impact';
+export {analyzeImpact} from '@zofai/change-impact';
+export {evaluatePolicy} from '@zofai/policy-as-code';
+export {compareContracts,readContract} from '@zofai/api-contract-check';
+export {compareSchemas,readSchema} from '@zofai/schema-diff';
+export {analyzeRisk} from '@zofai/code-risk-score';
+export {selectTests} from '@zofai/test-selection';
+export {generateTests,readSource} from '@zofai/testgen';
+export {normalizeReport} from '@zofai/ci-evidence';
 export const VERSION='0.1.0';
 export const CAPABILITIES={version:VERSION,local:['verify','diff','impact','test','evidence','policy','contract','schema','risk','select-tests','suggest-tests'],hosted:{available:false,status:'DOCUMENTED_BUT_UNVERIFIED',reason:'Approved hosted acceptance and account capabilities have not been verified'},telemetry:false};
 export interface Config {version:1;testCommands:{name:string;argv:string[];timeoutMs:number}[];exclude:string[]}
