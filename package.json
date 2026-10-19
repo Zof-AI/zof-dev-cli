@@ -1,6 +1,6 @@
 {
   "name": "@zof-ai/cli",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "Local static change verification, evidence and policy command-line tools",
   "type": "module",
   "main": "./dist/index.js",
@@ -57,12 +57,12 @@
   },
   "dependencies": {
     "@zof-ai/evidence-spec": "0.1.0",
-    "@zof-ai/change-impact": "0.1.0",
+    "@zof-ai/change-impact": "0.1.1",
     "@zof-ai/policy-as-code": "0.1.0",
     "@zof-ai/api-contract-check": "0.1.0",
     "@zof-ai/schema-diff": "0.1.0",
-    "@zof-ai/code-risk-score": "0.1.0",
-    "@zof-ai/test-selection": "0.1.0",
+    "@zof-ai/code-risk-score": "0.1.1",
+    "@zof-ai/test-selection": "0.1.1",
     "@zof-ai/testgen": "0.1.0",
     "@zof-ai/ci-evidence": "0.1.0"
   }

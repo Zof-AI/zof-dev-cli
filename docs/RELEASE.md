@@ -1,6 +1,6 @@
 # Release process
 
-Version 0.1.0 is prepared under [Apache-2.0](../LICENSE). [GitHub Releases](https://github.com/Zof-AI/zof-dev-cli/releases) is the initial distribution channel. Refer to the release's actual assets and commit SHA; these instructions are not evidence that an upload or installation succeeded.
+Version 0.1.1 is prepared under [Apache-2.0](../LICENSE). [GitHub Releases](https://github.com/Zof-AI/zof-dev-cli/releases) is the initial distribution channel. Refer to the release's actual assets and commit SHA; these instructions are not evidence that an upload or installation succeeded.
 
 Start with the [source installation](../README.md#install-from-github-source). Run `node scripts/bootstrap.mjs --allow-network`, `npm ci --ignore-scripts --prefer-offline`, `npm run build`, `npm test`, and `npm pack --ignore-scripts`. The bootstrap checks the exact dependency release SHA256 and byte sizes. Do not replace failed checks with an unverified dependency or a `file:` reference in published metadata.
 

@@ -1,4 +1,4 @@
-# Public API 0.1.0
+# Public API 0.1.1
 
 `verify({root,base?,head?,changedFiles?,exclude?,failOn?,signal?})` returns `{evidence,impact,exitCode}`. Evidence is validated against Evidence 1.0.0; impact uses impact/v1. Aborted requests and invalid/unbounded inputs throw safe errors. `formatVerification(result)` formats a plain report.
 

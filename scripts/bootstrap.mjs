@@ -12,15 +12,16 @@ const ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const MAX_ARTIFACT = 32 * 1024 * 1024;
 const MAX_TOTAL = 128 * 1024 * 1024;
 const REDIRECT_HOSTS = new Set(['github.com', 'release-assets.githubusercontent.com', 'objects.githubusercontent.com']);
+const VERSION = /^(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})\.(?:0|[1-9][0-9]{0,5})$/;
 const fail = () => new Error('Release dependency preparation failed. Check the reviewed release manifest and network availability.');
 
 export function validateManifest(value) {
-  if (!value || value.schemaVersion !== 1 || value.release !== 'v0.1.0' || !Array.isArray(value.dependencies) || value.dependencies.length > 32) throw fail();
+  if (!value || value.schemaVersion !== 1 || typeof value.release !== 'string' || !value.release.startsWith('v') || !VERSION.test(value.release.slice(1)) || !Array.isArray(value.dependencies) || value.dependencies.length > 32) throw fail();
   const names = new Set(); let total = 0;
   for (const entry of value.dependencies) {
-    if (!entry || !/^@zof-ai\/[a-z][a-z0-9-]*$/.test(entry.packageName) || entry.version !== '0.1.0' || !/^zof-[a-z][a-z0-9-]*$/.test(entry.repository) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ARTIFACT || names.has(entry.packageName)) throw fail();
-    const artifact = `zof-ai-${entry.packageName.slice('@zof-ai/'.length)}-0.1.0.tgz`;
-    if (entry.artifact !== artifact || entry.url !== `https://github.com/Zof-AI/${entry.repository}/releases/download/v0.1.0/${artifact}`) throw fail();
+    if (!entry || !/^@zof-ai\/[a-z][a-z0-9-]*$/.test(entry.packageName) || typeof entry.version !== 'string' || !VERSION.test(entry.version) || !/^zof-[a-z][a-z0-9-]*$/.test(entry.repository) || !/^[a-f0-9]{64}$/.test(entry.sha256) || !Number.isSafeInteger(entry.sizeBytes) || entry.sizeBytes < 1 || entry.sizeBytes > MAX_ARTIFACT || names.has(entry.packageName)) throw fail();
+    const artifact = `zof-ai-${entry.packageName.slice('@zof-ai/'.length)}-${entry.version}.tgz`;
+    if (entry.artifact !== artifact || entry.url !== `https://github.com/Zof-AI/${entry.repository}/releases/download/v${entry.version}/${artifact}`) throw fail();
     names.add(entry.packageName); total += entry.sizeBytes;
   }
   if (total > MAX_TOTAL) throw fail();
@@ -42,7 +43,7 @@ export async function readManifest(path = join(ROOT, 'scripts/release-dependenci
 }
 
 export async function downloadArtifact(entry, fetchImpl = globalThis.fetch) {
-  validateManifest({ schemaVersion: 1, release: 'v0.1.0', dependencies: [entry] });
+  validateManifest({ schemaVersion: 1, release: 'v' + entry?.version, dependencies: [entry] });
   let url = entry.url;
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 90_000);
