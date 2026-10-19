@@ -28,6 +28,7 @@ export function validateManifest(value) {
 }
 
 export async function readManifest(path = join(ROOT, 'scripts/release-dependencies.json')) {
+  try {
   const handle = await open(path, constants.O_RDONLY | (constants.O_NOFOLLOW ?? 0) | (constants.O_NONBLOCK ?? 0));
   try {
     const info = await handle.stat();
@@ -37,6 +38,7 @@ export async function readManifest(path = join(ROOT, 'scripts/release-dependenci
     if (bytesRead > 64 * 1024) throw fail();
     return validateManifest(JSON.parse(buffer.subarray(0, bytesRead).toString('utf8')));
   } finally { await handle.close(); }
+  } catch { throw fail(); }
 }
 
 export async function downloadArtifact(entry, fetchImpl = globalThis.fetch) {
