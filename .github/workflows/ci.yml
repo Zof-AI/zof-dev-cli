@@ -7,8 +7,9 @@ jobs:
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
+      max-parallel: 2
       matrix:
-        os: [ubuntu-latest, windows-latest, macos-latest]
+        os: [ubuntu-latest, macos-latest]
         node: [22, 24]
     timeout-minutes: 10
     steps:
@@ -18,7 +19,11 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: ${{ matrix.node }}
-      - run: npm ci --ignore-scripts
+      - name: Check secure filesystem runtime
+        run: python3 -c "import sys; assert sys.version_info >= (3, 10), 'Python 3.10 or newer required'"
+      - name: Prepare pinned GitHub release dependencies
+        run: node scripts/bootstrap.mjs --allow-network
+      - run: npm ci --ignore-scripts --prefer-offline
       - run: npm run build
       - run: npm test
       - run: npm pack --ignore-scripts

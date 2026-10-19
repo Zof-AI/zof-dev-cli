@@ -1,8 +1,6 @@
-import {spawn,execFile} from 'node:child_process';
+import {execFile} from 'node:child_process';
 import {promisify} from 'node:util';
-import {open,realpath,lstat} from 'node:fs/promises';
-import {join} from 'node:path';
-import {createEvidence,redact,safeReadFile,safeReadJson,serializeEvidence,validateEvidence,type Evidence,type Finding} from '@zof-ai/evidence-spec';
+import {createEvidence,redact,safeWriteFiles,safeGit,runTrustedCommand,safeReadFile,safeReadJson,serializeEvidence,validateEvidence,type Evidence,type Finding} from '@zof-ai/evidence-spec';
 import {analyzeImpact,type ImpactReport} from '@zof-ai/change-impact';
 export {analyzeImpact} from '@zof-ai/change-impact';
 export {evaluatePolicy} from '@zof-ai/policy-as-code';
@@ -17,9 +15,7 @@ export const CAPABILITIES={version:VERSION,local:['verify','diff','impact','test
 export interface Config {version:1;testCommands:{name:string;argv:string[];timeoutMs:number}[];exclude:string[]}
 const defaultConfig:Config={version:1,testCommands:[],exclude:['node_modules','dist','.git']};
 export async function init(root:string):Promise<Config>{
-  const directory=await realpath(root);
-  const file=await open(join(directory,'zof.config.json'),'wx',0o600);
-  try{await file.writeFile(JSON.stringify(defaultConfig,null,2)+'\n');}finally{await file.close();}
+  await safeWriteFiles(root,[{path:'zof.config.json',content:JSON.stringify(defaultConfig,null,2)+'\n'}]);
   return structuredClone(defaultConfig);
 }
 export async function loadConfig(root:string):Promise<Config>{
@@ -46,7 +42,7 @@ export async function verify(options:VerifyOptions):Promise<Verification>{
   const threshold=options.failOn??'high';const levels=['info','low','medium','high','critical'];
   if(!levels.includes(threshold))throw new Error('INVALID_THRESHOLD');
   let exclude=options.exclude;
-  if(!exclude){try{await lstat(join(options.root,'zof.config.json'));exclude=(await loadConfig(options.root)).exclude;}catch(error){if((error as NodeJS.ErrnoException).code!=='ENOENT')throw error;}}
+  if(!exclude){try{exclude=(await loadConfig(options.root)).exclude;}catch(error){if((error as {code?:string}).code!=='FILE_MISSING')throw error;}}
   const impact=await analyzeImpact({...options,exclude});
   if(impact.limitations.some(l=>l.code==='TREE_MISMATCH'))throw new Error('CHECKOUT_MISMATCH');
   const findings:Finding[]=[];let incomplete=false;
@@ -71,7 +67,7 @@ export async function verify(options:VerifyOptions):Promise<Verification>{
   const fail=findings.some(f=>levels.indexOf(f.severity)>=levels.indexOf(threshold));
   let commit:string|null=null;
   if(!options.changedFiles&&(options.head||impact.changes.length===0)){
-    try{const r=await promisify(execFile)('git',['-C',options.root,'rev-parse','--verify','--end-of-options',options.head??'HEAD'],{timeout:5000,maxBuffer:1024,env:gitEnvironment()});if(/^[0-9a-f]{40,64}\s*$/.test(r.stdout))commit=r.stdout.trim();}catch{/* unknown is explicit */}
+    try{const r=await safeGit(options.root,['rev-parse','--verify','--end-of-options',options.head??'HEAD'],1024);if(/^[0-9a-f]{40,64}\s*$/.test(r))commit=r.trim();}catch{/* unknown is explicit */}
   }
   const evidence=createEvidence({tool:{name:'zof-cli',version:VERSION},type:'static-analysis',source:{repository:null,commit},execution:{status:incomplete?'partial':'completed',result:fail?'fail':incomplete?'unknown':'pass'},findings,extensions:{'org.zof.static-analysis':{scope:'Documented heuristic patterns in changed lines; no tests executed',subject:options.head?'checked-out-commit':'working-tree',impactComplete:impact.complete}}});
   return {evidence,impact: redact(impact),exitCode:fail?1:incomplete?2:0};
@@ -84,14 +80,9 @@ export async function runTests(root:string,options:{allowExecution:boolean;signa
   for(const command of config.testCommands){
     if(options.signal?.aborted){interrupted=true;break;}
     const started=performance.now();
-    const state=await new Promise<'passed'|'failed'|'error'>(resolve=>{
-      const child=spawn(command.argv[0],command.argv.slice(1),{cwd:root,shell:false,stdio:'ignore',env:{PATH:process.env.PATH,SystemRoot:process.env.SystemRoot,WINDIR:process.env.WINDIR,TEMP:process.env.TEMP,TMP:process.env.TMP},windowsHide:true,detached:process.platform!=='win32'});
-      let killed=false;const stop=()=>{killed=true;try{if(process.platform!=='win32'&&child.pid)process.kill(-child.pid,'SIGKILL');else child.kill('SIGKILL');}catch{}};
-      const timer=setTimeout(stop,command.timeoutMs);const cancel=()=>{interrupted=true;stop();};options.signal?.addEventListener('abort',cancel,{once:true});
-      const cleanup=()=>{clearTimeout(timer);options.signal?.removeEventListener('abort',cancel);};
-      child.once('error',()=>{cleanup();resolve('error');});
-      child.once('close',code=>{cleanup();resolve(killed?'error':code===0?'passed':'failed');});
-    });
+    let state:'passed'|'failed'|'error';
+    try { state=(await runTrustedCommand(root,command.argv,{allowExecution:true,timeoutMs:command.timeoutMs,...(options.signal?{signal:options.signal}:{})}))===0?'passed':'failed'; }
+    catch { state='error'; if(options.signal?.aborted)interrupted=true; }
     tests.push({name:command.name,status:state,durationMs:Math.round(performance.now()-started)});
   }
   const failure=tests.some(t=>t.status==='failed'||t.status==='error');
@@ -101,6 +92,8 @@ export async function runTests(root:string,options:{allowExecution:boolean;signa
 export async function readEvidence(root:string,path:string):Promise<Evidence>{const e=await safeReadJson(root,path);if(!validateEvidence(e).valid)throw new Error('INVALID_EVIDENCE');return JSON.parse(serializeEvidence(e as Evidence));}
 export async function doctor(){
   let git=false;try{await promisify(execFile)('git',['--version'],{timeout:3000,maxBuffer:1024,env:gitEnvironment()});git=true;}catch{}
-  return {node:process.versions.node,nodeSupported:Number(process.versions.node.split('.')[0])>=22,git,...CAPABILITIES};
+  let python:{available:boolean;version:string|null;supported:boolean}={available:false,version:null,supported:false};
+  try{const r=await promisify(execFile)('python3',['-I','-S','-c','import sys; print(".".join(map(str,sys.version_info[:3])))'],{timeout:3000,maxBuffer:128,env:{PATH:process.env.PATH}});const version=r.stdout.trim();const [major,minor]=version.split('.').map(Number);if(/^\d+\.\d+\.\d+$/.test(version))python={available:true,version,supported:major===3&&minor>=10};}catch{}
+  return {node:process.versions.node,nodeSupported:Number(process.versions.node.split('.')[0])>=22,git,python,filesystemSupported:['linux','darwin'].includes(process.platform)&&python.supported,...CAPABILITIES};
 }
 export function formatVerification(result:Verification):string{return [`Verification: ${result.evidence.execution.status}/${result.evidence.execution.result}`,...result.evidence.findings.map(f=>`${f.severity.toUpperCase()} ${f.id} ${f.path??''}:${f.line??''} ${f.message}`),'Static heuristics only; no tests were executed.'].join('\n');}

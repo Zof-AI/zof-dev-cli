@@ -15,7 +15,9 @@ jobs:
       - uses: actions/setup-node@a0853c24544627f65ddf259abe73b1d18a591444
         with:
           node-version: 22
-      - run: npm ci --ignore-scripts
+      - name: Prepare pinned GitHub release dependencies
+        run: node scripts/bootstrap.mjs --allow-network
+      - run: npm ci --ignore-scripts --prefer-offline
       - run: npm run check
       - run: npm pack --ignore-scripts
 # This workflow builds only. Publication requires reviewed artifacts, a protected
