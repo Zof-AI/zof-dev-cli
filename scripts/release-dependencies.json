@@ -1,87 +1,87 @@
 {
   "schemaVersion": 1,
-  "release": "v0.1.1",
+  "release": "v0.1.2",
   "dependencies": [
     {
       "packageName": "@zof-ai/api-contract-check",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-api-contract-check",
-      "artifact": "zof-ai-api-contract-check-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-api-contract-check/releases/download/v0.1.0/zof-ai-api-contract-check-0.1.0.tgz",
-      "sha256": "7fee285bc7b0b70512d029c002e12e0f1e1d346b4bffcd19c7600857f186b4b5",
-      "sizeBytes": 16744
+      "artifact": "zof-ai-api-contract-check-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-api-contract-check/releases/download/v0.1.1/zof-ai-api-contract-check-0.1.1.tgz",
+      "sha256": "f8f64122432b4061271aa3999b341b1b5aeb60ff45af75b83975091d8db9533f",
+      "sizeBytes": 17161
     },
     {
       "packageName": "@zof-ai/change-impact",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "repository": "zof-change-impact",
-      "artifact": "zof-ai-change-impact-0.1.1.tgz",
-      "url": "https://github.com/Zof-AI/zof-change-impact/releases/download/v0.1.1/zof-ai-change-impact-0.1.1.tgz",
-      "sha256": "561e10c69ca814f14d4254c742e952415dae661abdacb725a838e468e1aa7329",
-      "sizeBytes": 20849
+      "artifact": "zof-ai-change-impact-0.1.2.tgz",
+      "url": "https://github.com/Zof-AI/zof-change-impact/releases/download/v0.1.2/zof-ai-change-impact-0.1.2.tgz",
+      "sha256": "21303711b2c2141d0a7a3fdc2f0da8fe96c8f8192b4fa39543bafcb5bff715ad",
+      "sizeBytes": 21278
     },
     {
       "packageName": "@zof-ai/ci-evidence",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-ci-evidence",
-      "artifact": "zof-ai-ci-evidence-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-ci-evidence/releases/download/v0.1.0/zof-ai-ci-evidence-0.1.0.tgz",
-      "sha256": "71748e8c00e61803b8c65a316413f702c3c1c372abf9c470bb0d1cc16785f403",
-      "sizeBytes": 15724
+      "artifact": "zof-ai-ci-evidence-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-ci-evidence/releases/download/v0.1.1/zof-ai-ci-evidence-0.1.1.tgz",
+      "sha256": "c3d422e9f9293d9036a6547845c3a7d58f3630d350208c5ffb18e4da0086c27e",
+      "sizeBytes": 16118
     },
     {
       "packageName": "@zof-ai/code-risk-score",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "repository": "zof-code-risk-score",
-      "artifact": "zof-ai-code-risk-score-0.1.1.tgz",
-      "url": "https://github.com/Zof-AI/zof-code-risk-score/releases/download/v0.1.1/zof-ai-code-risk-score-0.1.1.tgz",
-      "sha256": "8aff0524d64441e289aa6aff53c77c5aa76782d171351d3109b111397315bfbd",
-      "sizeBytes": 13968
+      "artifact": "zof-ai-code-risk-score-0.1.2.tgz",
+      "url": "https://github.com/Zof-AI/zof-code-risk-score/releases/download/v0.1.2/zof-ai-code-risk-score-0.1.2.tgz",
+      "sha256": "23ec423e50a6d5eb933780bbc015776750e73195532dd9127fc0c2626647a53c",
+      "sizeBytes": 14387
     },
     {
       "packageName": "@zof-ai/evidence-spec",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-evidence-spec",
-      "artifact": "zof-ai-evidence-spec-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-evidence-spec/releases/download/v0.1.0/zof-ai-evidence-spec-0.1.0.tgz",
-      "sha256": "d3d83c1335b801d155d17d3dc3cafd777a55f986d7a9f6023d90513970245ba5",
-      "sizeBytes": 25239
+      "artifact": "zof-ai-evidence-spec-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-evidence-spec/releases/download/v0.1.1/zof-ai-evidence-spec-0.1.1.tgz",
+      "sha256": "cc3ba2d539b330a77f0e4a90f8d23ddda0a73da91e44f8fe52664ee12fa95b45",
+      "sizeBytes": 25616
     },
     {
       "packageName": "@zof-ai/policy-as-code",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-policy-as-code",
-      "artifact": "zof-ai-policy-as-code-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-policy-as-code/releases/download/v0.1.0/zof-ai-policy-as-code-0.1.0.tgz",
-      "sha256": "678ec5b300141a0861e894658478af8478e06d023c3ebf3751ccffe41e534020",
-      "sizeBytes": 12017
+      "artifact": "zof-ai-policy-as-code-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-policy-as-code/releases/download/v0.1.1/zof-ai-policy-as-code-0.1.1.tgz",
+      "sha256": "1c8cb6ffd6b39e4221763151601aae7f2079710667a7be4c6727c7bd1f70b406",
+      "sizeBytes": 12404
     },
     {
       "packageName": "@zof-ai/schema-diff",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-schema-diff",
-      "artifact": "zof-ai-schema-diff-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-schema-diff/releases/download/v0.1.0/zof-ai-schema-diff-0.1.0.tgz",
-      "sha256": "5696cdff6f79c53680fd1946ade10c1bf27eabbd20d3d9e3b56ea14d2a9faf1b",
-      "sizeBytes": 17133
+      "artifact": "zof-ai-schema-diff-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-schema-diff/releases/download/v0.1.1/zof-ai-schema-diff-0.1.1.tgz",
+      "sha256": "38098348879f4422de88b0cdbbc78ad90c12c5b85aad5be8ac30fc061a5ed6cf",
+      "sizeBytes": 17532
     },
     {
       "packageName": "@zof-ai/test-selection",
-      "version": "0.1.1",
+      "version": "0.1.2",
       "repository": "zof-test-selection",
-      "artifact": "zof-ai-test-selection-0.1.1.tgz",
-      "url": "https://github.com/Zof-AI/zof-test-selection/releases/download/v0.1.1/zof-ai-test-selection-0.1.1.tgz",
-      "sha256": "8b789562774626b0dc354d9cd32b5f37e09826b6d7a7ce25a1052a7ba2e44dce",
-      "sizeBytes": 12703
+      "artifact": "zof-ai-test-selection-0.1.2.tgz",
+      "url": "https://github.com/Zof-AI/zof-test-selection/releases/download/v0.1.2/zof-ai-test-selection-0.1.2.tgz",
+      "sha256": "ae3d6505e78c4099fd656e93ea10bb82e9a0e3c969a4fc9b8c3b7c534483f89f",
+      "sizeBytes": 13099
     },
     {
       "packageName": "@zof-ai/testgen",
-      "version": "0.1.0",
+      "version": "0.1.1",
       "repository": "zof-testgen",
-      "artifact": "zof-ai-testgen-0.1.0.tgz",
-      "url": "https://github.com/Zof-AI/zof-testgen/releases/download/v0.1.0/zof-ai-testgen-0.1.0.tgz",
-      "sha256": "2ec916515386d9242723be9f251b476e58d0513fcced41c062bd3001d5298b9d",
-      "sizeBytes": 26298
+      "artifact": "zof-ai-testgen-0.1.1.tgz",
+      "url": "https://github.com/Zof-AI/zof-testgen/releases/download/v0.1.1/zof-ai-testgen-0.1.1.tgz",
+      "sha256": "2cc90ec7e75f846b853433041252ad0cc67889b010b3473129107aa9bd45120b",
+      "sizeBytes": 26542
     }
   ]
 }

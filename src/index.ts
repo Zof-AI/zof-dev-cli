@@ -10,7 +10,7 @@ export {analyzeRisk} from '@zof-ai/code-risk-score';
 export {selectTests} from '@zof-ai/test-selection';
 export {generateTests,readSource} from '@zof-ai/testgen';
 export {normalizeReport} from '@zof-ai/ci-evidence';
-export const VERSION='0.1.1';
+export const VERSION='0.1.2';
 export const CAPABILITIES={version:VERSION,local:['verify','diff','impact','test','evidence','policy','contract','schema','risk','select-tests','suggest-tests'],hosted:{available:false,status:'DOCUMENTED_BUT_UNVERIFIED',reason:'Approved hosted acceptance and account capabilities have not been verified'},telemetry:false};
 export interface Config {version:1;testCommands:{name:string;argv:string[];timeoutMs:number}[];exclude:string[]}
 const defaultConfig:Config={version:1,testCommands:[],exclude:['node_modules','dist','.git']};
