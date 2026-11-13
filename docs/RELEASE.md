@@ -1,6 +1,6 @@
 # Release process
 
-Version 0.1.2 is distributed under [Apache-2.0](../LICENSE). [GitHub Releases](https://github.com/Zof-AI/zof-dev-cli/releases) provides versioned source and reviewed build artifacts. Install `@zof-ai/cli@0.1.2` using the [npm quickstart](../README.md#install-from-npm). Refer to the release assets, commit SHA and recorded validation for the exact version.
+Version 0.1.3 is distributed under [Apache-2.0](../LICENSE). [GitHub Releases](https://github.com/Zof-AI/zof-dev-cli/releases) provides versioned source and reviewed build artifacts. Install `@zof-ai/cli@0.1.3` using the [npm quickstart](../README.md#install-from-npm). Refer to the release assets, commit SHA and recorded validation for the exact version.
 
 Start with the [source installation](../README.md#install-from-github-source). Run `node scripts/bootstrap.mjs --allow-network`, `npm ci --ignore-scripts --prefer-offline`, `npm run build`, `npm test`, and `npm pack --ignore-scripts`. The bootstrap checks the exact dependency release SHA256 and byte sizes. Do not replace failed checks with an unverified dependency or a `file:` reference in published metadata.
 

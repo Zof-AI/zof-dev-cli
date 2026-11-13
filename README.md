@@ -8,7 +8,7 @@ Run local static change checks, inspect dependencies, execute explicitly trusted
 Use Node.js 22 or 24 and npm. File-based operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. In a new project directory, install the version used by this guide:
 
 ```sh
-npm install --ignore-scripts --save-exact @zof-ai/cli@0.1.2
+npm install --ignore-scripts --save-exact @zof-ai/cli@0.1.3
 npx --no-install zof --help
 ```
 
@@ -37,7 +37,7 @@ Package: [@zof-ai/cli](https://www.npmjs.com/package/@zof-ai/cli). The source-ch
 Requires Node.js 22 or 24, npm, and Git. Filesystem operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. Clone this repository and explicitly prepare its reviewed release dependencies:
 
 ```sh
-git clone --branch v0.1.2 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
+git clone --branch v0.1.3 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
 cd zof-dev-cli
 node scripts/bootstrap.mjs --allow-network
 npm ci --ignore-scripts --prefer-offline
