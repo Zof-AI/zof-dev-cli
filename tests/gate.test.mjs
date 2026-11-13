@@ -58,7 +58,7 @@ test('exit 2: configuration problems say what to fix and send nothing',async()=>
 
 test('exit 2: server config codes map to 2 and pass on the detail',async()=>{
   for(const [status,code] of [[422,'unknown_environment'],[404,'repo_not_found'],[409,'commit_ambiguous'],[409,'idempotency_conflict'],[422,'invalid_body'],[413,'payload_too_large']]){
-    const r=await run({responses:[json(status,fail(code,'Detail from Zof for '+code))]});assert.equal(r.code,EXIT.config,code);assert.match(r.out,new RegExp(code));
+    const r=await run({responses:[json(status,fail(code,'Detail from Zof for '+code))]});assert.equal(r.code,EXIT.config,code);assert.ok(!r.out.includes(code),r.out);assert.match(r.out,/\nNext: /);
   }
 });
 
@@ -228,7 +228,7 @@ test('runner clock skew: the server deadline is read as wait_until - answered_at
 test('help exits 0 only on its own; stray flags and a missing subcommand exit 2',async()=>{
   for(const argv of [['--help'],['-h'],['help'],['decide','--help']])assert.equal((await run({argv})).code,EXIT.pass,argv.join(' '));
   const mixed=await run({argv:[...args,'--help'],responses:[json(201,answer())]});assert.equal(mixed.code,EXIT.config);assert.equal(mixed.requests.length,0);
-  const bare=await run({argv:['--environment','x'],responses:[json(201,answer())]});assert.equal(bare.code,EXIT.config);assert.match(bare.out,/Unknown subcommand\. Use: zof gate decide --environment <name>/);
+  const bare=await run({argv:['--environment','x'],responses:[json(201,answer())]});assert.equal(bare.code,EXIT.config);assert.match(bare.out,/Unknown subcommand\./);assert.match(bare.out,/Next: Use zof gate decide --environment <name>/);
   assert.equal((await run({argv:[]})).code,EXIT.config);
 });
 
@@ -244,7 +244,7 @@ test('polish: reasons_total type-checked, --json errors are one line, clear next
     const e=JSON.parse(out[0].line).error;assert.equal(e.exit,exit);assert.equal(typeof e.code,'string');
   }
   assert.match((await run({env:{ZOF_GATE_TOKEN:TOKEN}})).out,/Pipeline tokens/);
-  assert.match((await run({argv:[...args,'--break-glass','x']})).out,/later release.*contact Zof support/);
+  assert.match((await run({argv:[...args,'--break-glass','x']})).out,/later release[^]*contact Zof support/);
 });
 
 test('production wiring uses a monotonic clock, not wall time',async()=>{
@@ -259,4 +259,21 @@ test('a multi-line token is refused with exit 4 before any mask line, and no par
   const r=await run({env,responses:[json(201,answer())]});
   assert.equal(r.code,EXIT.token);assert.equal(r.requests.length,0);
   assert.ok(!r.lines.some(l=>l.line.includes('add-mask')),'no mask line');assert.ok(!r.out.includes('SECONDLINE')&&!r.out.includes('M'.repeat(20)),r.out);
+});
+
+test('customer text is plain: a what line and a Next line, no internal names or raw codes',async()=>{
+  const codes=['unauthorized','token_expired','insufficient_scope','gate_not_enabled','company_unbound','environment_not_allowed','break_glass_not_allowed','repo_not_found','not_found','commit_unknown','commit_ambiguous','idempotency_conflict','payload_too_large','idempotency_key_required','invalid_body','unknown_environment','rate_limited','policy_lagging','verification_unavailable'];
+  const status={unauthorized:401,token_expired:401,repo_not_found:404,not_found:404,commit_unknown:409,commit_ambiguous:409,idempotency_conflict:409,payload_too_large:413,idempotency_key_required:422,invalid_body:422,unknown_environment:422,rate_limited:429,policy_lagging:503,verification_unavailable:503};
+  const scenarios=[...codes.map(c=>({responses:[json(status[c]??403,fail(c,'Internal detail §3.6 CP-1 '+c))]})),
+    {responses:[new Error('getaddrinfo ENOTFOUND cp.example.test')]},{responses:[json(201,answer({tenant_id:undefined}))]},
+    {responses:[{status:403,headers:{},text:'<html>waf</html>'}]},{responses:[json(202,waiting()),json(404,fail('not_found'))]},
+    {env:{ZOF_API_URL:API}},{argv:[...args,'--wat','1']},{argv:[...args,'--max-wait','0']},{env:{...baseEnv,ZOF_GATE_TOKEN:'nope'}},
+    {responses:[json(201,answer({result:'fail',basis:null,verdict:'deny',authorization_id:null,failure:{code:'denied',message:'The deploy decision blocks this commit.'},reasons:[{code:'blocking_check_failed',message:'',remedy:null}]}))]}];
+  for(const sc of scenarios){
+    const r=await run({responses:[json(201,answer())],...sc});assert.notEqual(r.code,EXIT.pass);
+    const lines=r.lines.map(l=>l.line).filter(l=>!l.startsWith('::add-mask::')&&!l.startsWith('Zof gate: ')&&!l.startsWith('Waiting for '));
+    for(const l of lines){assert.ok(!/§|CP-\d|Zof says|code:|ENOTFOUND/.test(l),l);for(const c of [...codes,'denied','blocking_check_failed'])assert.ok(!l.includes(c),`${c} in: ${l}`);}
+    assert.match(lines.at(-1),/^Next: /,lines.join(' | '));
+    if(r.code!==EXIT.blocked)assert.equal(lines.length,2,lines.join(' | '));
+  }
 });
