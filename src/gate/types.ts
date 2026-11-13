@@ -1,4 +1,4 @@
-/** gate.v1 shapes from the CI/CD release gate spec, sections 3.1 and 3.3. */
+/** Release gate shapes (spec 3.1 and 3.3; CP schemas release_gate_request.v1.json and release_gate.v1.json). */
 export const PROVIDERS = ['github_actions', 'gitlab_ci', 'bitbucket', 'azure_pipelines', 'jenkins', 'circleci', 'other'] as const;
 export type Provider = (typeof PROVIDERS)[number];
 

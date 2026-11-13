@@ -177,7 +177,7 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
       }
       if (r.status < 400) throw new Stop(EXIT.unavailable, `unexpected HTTP ${r.status} from ${base}.`);
       const e = errorBody(r.text);
-      // Deliberate deviation from spec 3.6 (404 -> 2): we just created this gate id, so losing it is Zof's fault, not the pipeline's.
+      // Agreed with A: a 404 on a gate id this CLI just created is Zof's fault (3); a 404 on the first call stays 2.
       if (polling && r.status === 404) throw new Stop(EXIT.unavailable, 'Zof lost track of this gate check while it was waiting.');
       const ref = refusal(r.status, e.code);
       throw new Stop(ref.exit, `${ref.text} (code: ${ref.code})${e.detail ? `\n  Zof says: ${e.detail}` : ''}`);

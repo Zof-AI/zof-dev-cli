@@ -120,8 +120,9 @@ test('--no-wait answers once: a waiting gate is not a pass',async()=>{
   assert.equal(r.code,EXIT.blocked);assert.equal(r.requests.length,1);
 });
 
-test('a 404 for our own gate id mid-poll is on Zof\'s side',async()=>{
-  const r=await run({responses:[json(202,waiting()),json(404,fail('not_found'))]});assert.equal(r.code,EXIT.unavailable);
+test('404: mid-poll on our own gate id is on Zof\'s side (3); on the first call it stays config (2)',async()=>{
+  const r=await run({responses:[json(202,waiting()),json(404,fail('not_found'))]});assert.equal(r.code,EXIT.unavailable);assert.match(r.out,/on Zof's side/);
+  for(const code of ['not_found','repo_not_found',undefined]){const first=await run({responses:[json(404,code?fail(code):{})]});assert.equal(first.code,EXIT.config,String(code));assert.equal(first.requests.length,1);}
 });
 
 test('outages never pass: every failure kind exits non-zero, and every outage exits exactly 3',async()=>{
