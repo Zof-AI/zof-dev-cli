@@ -149,6 +149,10 @@ test('token redaction: the token never reaches the log, even when echoed back',a
   for(const line of ['::set-output name=x::y','  ::error::x','\t::add-mask::x',' \t ##[group]x','##vso[task.setvariable]x','a\n  ::warning::b'])
     for(const out of redact(line).split('\n'))assert.ok(!/^\s*(::|##\[|##vso\[)/.test(out),JSON.stringify(out));
   assert.equal(redact('::set-output name=x::y'),'> ::set-output name=x::y');assert.equal(redact('fine :: here'),'fine :: here');
+  // The v1 parser (IndexOf("##[")) and Azure's ##vso[ fire anywhere in a line, not only at the start.
+  for(const line of ['Blocked by Zof: x ##[warning]y','reason ##vso[task.setvariable variable=x]1','a##[error]b ##vso[task.complete]'])
+    assert.ok(!/##(vso)?\[/.test(redact(line)),redact(line));
+  assert.equal(redact('x ##[warning]y'),'x # #[warning]y');assert.equal(redact('x ##vso[a]'),'x # #vso[a]');
 });
 
 test('GitHub Actions: masks the token first, and detects the PR head commit',async()=>{
@@ -241,4 +245,11 @@ test('polish: reasons_total type-checked, --json errors are one line, clear next
   }
   assert.match((await run({env:{ZOF_GATE_TOKEN:TOKEN}})).out,/Pipeline tokens/);
   assert.match((await run({argv:[...args,'--break-glass','x']})).out,/later release.*contact Zof support/);
+});
+
+test('production wiring uses a monotonic clock, not wall time',async()=>{
+  const {productionDeps}=await import('../dist/gate/index.js');
+  const d=productionDeps('0.0.0-test');const a=d.now(),b=d.now();
+  // performance.now() counts from process start; Date.now() is ~1.7e12.
+  assert.ok(a>=0&&a<1e10&&b>=a,String(a));
 });
