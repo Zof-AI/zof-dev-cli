@@ -1,0 +1,15 @@
+{
+  "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "environment": "prod-eu",
+  "pipeline": {
+    "job": "deploy",
+    "provider": "github_actions",
+    "run_attempt": 1,
+    "run_id": "1234567890",
+    "run_url": "https://github.com/example-org/shop/actions/runs/1234567890"
+  },
+  "pull_request": 42,
+  "ref": "refs/heads/main",
+  "repo": "example-org/shop",
+  "schema_version": 1
+}

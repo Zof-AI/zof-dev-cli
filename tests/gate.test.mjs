@@ -7,7 +7,7 @@ const TOKEN='zgt_'+'A1b2C3d4'.repeat(5)+'xyz';
 const SHA='1a2b3c4d5e6f7a8b9c0d1e2f3a4b5c6d7e8f9a0b';
 const GATE='gate_'+'0'.repeat(31)+'1';
 const API='https://cp.example.test';
-const answer=(over={})=>({schema_version:1,kind:'gate_check',gate_id:GATE,tenant_id:'github:org:1',change_id:'chg_1',correlation_id:'c1',repo:'acme/app',commit_sha:SHA,environment:'production',policy_environment:'production',state:'final',result:'pass',basis:'decision',verdict:'allow',waiting_for:null,reasons:[],failure:null,decision_id:'d1',inputs_hash:'h',authorization_id:'auth_1',console_url:'https://console.example.test/releases/pr/1',approve_url:null,wait_until:'2030-01-01T00:10:00Z',poll_after_seconds:5,answered_at:'2030-01-01T00:00:01Z',...over});
+const answer=(over={})=>({schema_version:1,kind:'gate_check',gate_id:GATE,tenant_id:'github:org:1',change_id:'chg_1',correlation_id:'c1',repo:'acme/app',commit_sha:SHA,environment:'production',policy_environment:'production',state:'final',result:'pass',basis:'decision',verdict:'allow',waiting_for:null,reasons:[],failure:null,decision_id:'d1',inputs_hash:'h',authorization_id:'00000000-0000-0000-0000-0000000000a1',console_url:'https://console.example.test/releases/pr/1',approve_url:null,wait_until:'2030-01-01T00:10:00Z',poll_after_seconds:5,answered_at:'2030-01-01T00:00:01Z',...over});
 const waiting=(over={})=>answer({state:'waiting',result:'waiting',basis:null,verdict:'require_evidence',waiting_for:'evidence',authorization_id:null,reasons:[{code:'MISSING_BLOCKING_EVIDENCE',requirement_key:'performance.load',message:'Load test evidence is missing.',remedy:'run_capability'}],...over});
 const json=(status,body,headers={})=>({status,headers:{'content-type':'application/json',...headers},text:JSON.stringify(body)});
 const fail=(code,detail='x')=>({code,detail});
@@ -252,4 +252,11 @@ test('production wiring uses a monotonic clock, not wall time',async()=>{
   const d=productionDeps('0.0.0-test');const a=d.now(),b=d.now();
   // performance.now() counts from process start; Date.now() is ~1.7e12.
   assert.ok(a>=0&&a<1e10&&b>=a,String(a));
+});
+
+test('a multi-line token is refused with exit 4 before any mask line, and no part of it is printed',async()=>{
+  const first='zgt_'+'M'.repeat(43);const env={...baseEnv,GITHUB_ACTIONS:'true',ZOF_GATE_TOKEN:first+'\nSECONDLINEpart'};
+  const r=await run({env,responses:[json(201,answer())]});
+  assert.equal(r.code,EXIT.token);assert.equal(r.requests.length,0);
+  assert.ok(!r.lines.some(l=>l.line.includes('add-mask')),'no mask line');assert.ok(!r.out.includes('SECONDLINE')&&!r.out.includes('M'.repeat(20)),r.out);
 });

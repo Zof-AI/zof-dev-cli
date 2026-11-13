@@ -1,0 +1,381 @@
+{
+  "$defs": {
+    "Basis": {
+      "enum": [
+        "decision",
+        "baseline",
+        "break_glass"
+      ],
+      "type": "string"
+    },
+    "Environment": {
+      "enum": [
+        "production",
+        "staging"
+      ],
+      "title": "Environment",
+      "type": "string"
+    },
+    "FailureCode": {
+      "enum": [
+        "denied",
+        "not_waitable",
+        "evidence_timeout",
+        "approval_timeout",
+        "decision_timeout",
+        "change_closed",
+        "repo_inactive",
+        "stale_decision",
+        "action_expired",
+        "action_already_used",
+        "authorization_invalid",
+        "gate_expired"
+      ],
+      "title": "FailureCode",
+      "type": "string"
+    },
+    "GateFailure": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "$ref": "#/$defs/FailureCode"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        }
+      },
+      "required": [
+        "code",
+        "message"
+      ],
+      "title": "GateFailure",
+      "type": "object"
+    },
+    "GateReason": {
+      "additionalProperties": false,
+      "properties": {
+        "code": {
+          "title": "Code",
+          "type": "string"
+        },
+        "message": {
+          "title": "Message",
+          "type": "string"
+        },
+        "remedy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/RemedyAction"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "requirement_key": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Requirement Key"
+        }
+      },
+      "required": [
+        "code",
+        "requirement_key",
+        "message",
+        "remedy"
+      ],
+      "title": "GateReason",
+      "type": "object"
+    },
+    "GateResult": {
+      "enum": [
+        "waiting",
+        "pass",
+        "fail"
+      ],
+      "type": "string"
+    },
+    "GateState": {
+      "enum": [
+        "waiting",
+        "final"
+      ],
+      "type": "string"
+    },
+    "RemedyAction": {
+      "enum": [
+        "fix_and_push",
+        "add_agent_mapping_in_zof_yaml",
+        "grant_agent_in_catalogue",
+        "human_takes_over",
+        "run_capability",
+        "turn_on_code_review",
+        "request_review",
+        "wait",
+        "add_unit_tests",
+        "add_criteria_or_waive",
+        "retry_when_available",
+        "rerun_with_current_policy",
+        "map_files_in_zof_yaml",
+        "obtain_approval",
+        "publish_release_policy"
+      ],
+      "title": "RemedyAction",
+      "type": "string"
+    },
+    "Verdict": {
+      "enum": [
+        "allow",
+        "deny",
+        "require_evidence",
+        "require_approval",
+        "limit",
+        "canary",
+        "rollback",
+        "remediate"
+      ],
+      "title": "Verdict",
+      "type": "string"
+    },
+    "WaitingFor": {
+      "enum": [
+        "decision",
+        "evidence",
+        "approval"
+      ],
+      "type": "string"
+    }
+  },
+  "$id": "urn:zof:control:release_gate:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "POST /v1/gate/checks and GET /v1/gate/checks/{gate_id} (gate.v1, EVENT_SAMPLES v3.110): the release gate's answer for one pipeline call; gate_answer.v1 is the console's merge answer.",
+  "properties": {
+    "answered_at": {
+      "format": "date-time",
+      "title": "Answered At",
+      "type": "string"
+    },
+    "approve_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Approve Url"
+    },
+    "authorization_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Authorization Id"
+    },
+    "basis": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Basis"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "description": "Exit 0 only when state is `final` and result is `pass`. A pass has a basis: `decision` (a stored ALLOW with an executed authorization), `baseline` or `break_glass` (each an audited row). A recorded pass reads `fail gate_expired` 15 minutes after `answered_at` or at `wait_until`."
+    },
+    "change_id": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Change Id"
+    },
+    "commit_sha": {
+      "title": "Commit Sha",
+      "type": "string"
+    },
+    "console_url": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Console Url"
+    },
+    "correlation_id": {
+      "title": "Correlation Id",
+      "type": "string"
+    },
+    "decision_id": {
+      "anyOf": [
+        {
+          "format": "uuid",
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Decision Id"
+    },
+    "environment": {
+      "title": "Environment",
+      "type": "string"
+    },
+    "failure": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/GateFailure"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "gate_id": {
+      "pattern": "^gate_[0-9a-f]{32}$",
+      "title": "Gate Id",
+      "type": "string"
+    },
+    "inputs_hash": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Inputs Hash"
+    },
+    "kind": {
+      "const": "gate_check",
+      "title": "Kind",
+      "type": "string"
+    },
+    "policy_environment": {
+      "$ref": "#/$defs/Environment"
+    },
+    "poll_after_seconds": {
+      "anyOf": [
+        {
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "title": "Poll After Seconds"
+    },
+    "reasons": {
+      "items": {
+        "$ref": "#/$defs/GateReason"
+      },
+      "maxItems": 20,
+      "title": "Reasons",
+      "type": "array"
+    },
+    "reasons_total": {
+      "minimum": 0,
+      "title": "Reasons Total",
+      "type": "integer"
+    },
+    "repo": {
+      "title": "Repo",
+      "type": "string"
+    },
+    "result": {
+      "$ref": "#/$defs/GateResult",
+      "description": "Exit 0 only when state is `final` and result is `pass`. A pass has a basis: `decision` (a stored ALLOW with an executed authorization), `baseline` or `break_glass` (each an audited row). A recorded pass reads `fail gate_expired` 15 minutes after `answered_at` or at `wait_until`."
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    },
+    "state": {
+      "$ref": "#/$defs/GateState",
+      "description": "Exit 0 only when state is `final` and result is `pass`. A pass has a basis: `decision` (a stored ALLOW with an executed authorization), `baseline` or `break_glass` (each an audited row). A recorded pass reads `fail gate_expired` 15 minutes after `answered_at` or at `wait_until`."
+    },
+    "tenant_id": {
+      "title": "Tenant Id",
+      "type": "string"
+    },
+    "verdict": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/Verdict"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "wait_until": {
+      "format": "date-time",
+      "title": "Wait Until",
+      "type": "string"
+    },
+    "waiting_for": {
+      "anyOf": [
+        {
+          "$ref": "#/$defs/WaitingFor"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "gate_id",
+    "tenant_id",
+    "change_id",
+    "correlation_id",
+    "repo",
+    "commit_sha",
+    "environment",
+    "policy_environment",
+    "state",
+    "result",
+    "basis",
+    "verdict",
+    "waiting_for",
+    "reasons",
+    "reasons_total",
+    "failure",
+    "decision_id",
+    "inputs_hash",
+    "authorization_id",
+    "console_url",
+    "approve_url",
+    "wait_until",
+    "poll_after_seconds",
+    "answered_at"
+  ],
+  "title": "ReleaseGateAnswer",
+  "type": "object"
+}

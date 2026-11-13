@@ -4,7 +4,9 @@ export interface Expect {repo: string; commit_sha: string; environment: string; 
 export type Parsed = {ok: true; answer: GateAnswer} | {ok: false; why: string};
 
 const isObj = (v: unknown): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v);
-const strOrNull = (v: unknown) => v === null || v === undefined || typeof v === 'string';
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const DATE_TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/;
+const strOrNull =(v: unknown) => v === null || v === undefined || typeof v === 'string';
 
 /** Parses a gate.v1 answer and checks it is about this request. Anything else is "no answer". */
 export function parseAnswer(text: string, expect: Expect): Parsed {
@@ -19,6 +21,11 @@ export function parseAnswer(text: string, expect: Expect): Parsed {
   const final = v.state === 'final';
   if (!(v.state === 'waiting' || final)) return {ok: false, why: 'the answer has an unknown state'};
   if (final ? !(v.result === 'pass' || v.result === 'fail') : v.result !== 'waiting') return {ok: false, why: 'the answer state and result disagree'};
+  // Held to release_gate.v1's required fields; a body that fails the schema is no answer (exit 3).
+  for (const k of ['tenant_id', 'correlation_id'] as const) if (typeof v[k] !== 'string') return {ok: false, why: `the answer has no ${k}`};
+  if (typeof v.answered_at !== 'string' || !DATE_TIME.test(v.answered_at) || !Number.isFinite(Date.parse(v.answered_at))) return {ok: false, why: 'the answer has no valid answered_at'};
+  if (v.policy_environment !== 'production' && v.policy_environment !== 'staging') return {ok: false, why: 'the answer has no valid policy_environment'};
+  if (v.authorization_id !== null && v.authorization_id !== undefined && !(typeof v.authorization_id === 'string' && UUID.test(v.authorization_id))) return {ok: false, why: 'the answer authorization_id is not a UUID'};
   if (v.reasons !== undefined && !Array.isArray(v.reasons)) return {ok: false, why: 'the answer reasons are malformed'};
   const reasons = ((v.reasons as unknown[]) ?? []).filter(isObj).map(r => ({...r, code: String(r.code ?? ''), message: String(r.message ?? '')}));
   for (const k of ['verdict', 'waiting_for', 'authorization_id', 'console_url', 'approve_url', 'wait_until', 'basis'] as const) if (!strOrNull(v[k])) return {ok: false, why: `the answer field ${k} is malformed`};

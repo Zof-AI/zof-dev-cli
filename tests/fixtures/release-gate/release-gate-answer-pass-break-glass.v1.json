@@ -1,0 +1,35 @@
+{
+  "answered_at": "2026-11-13T10:00:04Z",
+  "approve_url": null,
+  "authorization_id": null,
+  "basis": "break_glass",
+  "change_id": "chg-1",
+  "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "console_url": "https://console.example.com/releases/pr/chg-1",
+  "correlation_id": "corr-1",
+  "decision_id": "00000000-0000-0000-0000-000000000014",
+  "environment": "prod-eu",
+  "failure": null,
+  "gate_id": "gate_11111111111111111111111111111111",
+  "inputs_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "kind": "gate_check",
+  "policy_environment": "production",
+  "poll_after_seconds": null,
+  "reasons": [
+    {
+      "code": "blocking_check_failed",
+      "message": "A required check failed.",
+      "remedy": "fix_and_push",
+      "requirement_key": "performance.load"
+    }
+  ],
+  "reasons_total": 1,
+  "repo": "example-org/shop",
+  "result": "pass",
+  "schema_version": 1,
+  "state": "final",
+  "tenant_id": "github:org:1001",
+  "verdict": "deny",
+  "wait_until": "2026-11-13T10:30:00Z",
+  "waiting_for": null
+}

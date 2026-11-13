@@ -1,0 +1,13 @@
+{
+  "break_glass_reason": "Hotfix for a payments outage; approved on the incident call",
+  "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "environment": "prod-eu",
+  "pipeline": {
+    "job": "deploy",
+    "provider": "github_actions",
+    "run_attempt": 1,
+    "run_id": "1234567890"
+  },
+  "repo": "example-org/shop",
+  "schema_version": 1
+}

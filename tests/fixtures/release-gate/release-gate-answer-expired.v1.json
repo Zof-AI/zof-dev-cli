@@ -1,0 +1,31 @@
+{
+  "answered_at": "2026-11-13T10:15:04Z",
+  "approve_url": null,
+  "authorization_id": null,
+  "basis": null,
+  "change_id": "chg-1",
+  "commit_sha": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "console_url": "https://console.example.com/releases/pr/chg-1",
+  "correlation_id": "corr-1",
+  "decision_id": "00000000-0000-0000-0000-000000000014",
+  "environment": "prod-eu",
+  "failure": {
+    "code": "gate_expired",
+    "message": "This pass has expired. Re-run the job to ask again."
+  },
+  "gate_id": "gate_11111111111111111111111111111111",
+  "inputs_hash": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "kind": "gate_check",
+  "policy_environment": "production",
+  "poll_after_seconds": null,
+  "reasons": [],
+  "reasons_total": 0,
+  "repo": "example-org/shop",
+  "result": "fail",
+  "schema_version": 1,
+  "state": "final",
+  "tenant_id": "github:org:1001",
+  "verdict": "allow",
+  "wait_until": "2026-11-13T10:30:00Z",
+  "waiting_for": null
+}

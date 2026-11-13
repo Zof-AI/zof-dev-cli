@@ -22,7 +22,8 @@ const MAX_ATTEMPTS = 5; // consecutive failed tries before "Zof unavailable"
 const LONG_POLL_SECONDS = 20;
 const SERVER_GRACE_MS = 60_000; // past wait_until the server must answer final; if not, the fault is Zof's
 const NAME = /^[a-z][a-z0-9-]{0,62}$/;
-const REPO = /^[A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}$/;
+const REPO = /^[A-Za-z0-9-]{1,39}\/[A-Za-z0-9._-]{1,100}$/; // release_gate_request.v1
+const JOB = /^[\x21-\x7e]{1,100}$/;
 const TOKEN = /^zgt_[A-Za-z0-9_-]{20,200}$/;
 const PRINTABLE = /^[\x21-\x7e]{1,128}$/;
 
@@ -73,7 +74,7 @@ async function buildRequest(o: Options, deps: GateDeps): Promise<{request: GateR
   if (!NAME.test(environment)) throw usage('--environment must be lower-case letters, digits and dashes, starting with a letter (at most 63).');
   const repo = o.repo ?? ci.repo;
   if (!repo) throw usage('No repository. Pass --repo owner/name (the GitHub repository Zof checks).');
-  if (!REPO.test(repo)) throw usage('--repo must look like owner/name.');
+  if (!REPO.test(repo)) throw usage('--repo must be owner/name: the owner is 1-39 letters, digits or dashes, the name 1-100 letters, digits, dots, dashes or underscores.');
   const commit = (o.commit ?? ci.commit)?.toLowerCase();
   if (!commit) throw usage('No commit. Pass --commit with the full 40-character SHA.');
   if (!/^[0-9a-f]{40}$/.test(commit)) throw usage('--commit must be the full 40-character commit SHA.');
@@ -89,7 +90,9 @@ async function buildRequest(o: Options, deps: GateDeps): Promise<{request: GateR
   }
   const runUrl = o.runUrl ?? ci.runUrl;
   if (runUrl !== undefined && (!/^https:\/\/[\x21-\x7e]+$/.test(runUrl) || runUrl.length > 2048)) throw usage('--run-url must be an https URL of at most 2048 characters.');
-  const job = ci.job && PRINTABLE.test(ci.job) ? ci.job : 'gate';
+  if (ci.job && ci.job.length > 100) throw usage('The CI job name (GITHUB_JOB or CI_JOB_NAME) is over 100 characters, the most Zof allows. Shorten the job name.');
+  // A job name with spaces or other characters the contract refuses (common on GitLab) is sent as "gate", as in G-1.
+  const job = ci.job && JOB.test(ci.job) ? ci.job : 'gate';
   if (!PROVIDERS.includes(ci.provider)) throw usage('Unknown CI provider.');
   const request: GateRequest = {schema_version: 1, repo, commit_sha: commit, ...(ref ? {ref} : {}), ...(pullRequest ? {pull_request: pullRequest} : {}), environment,
     pipeline: {provider: ci.provider, run_id: runId, run_attempt: ci.runAttempt ?? 1, job, ...(runUrl ? {run_url: runUrl} : {})}};
@@ -130,7 +133,8 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
   if (argv.length === 0) { deps.write('out', GATE_HELP); return EXIT.config; }
   if (argv[0] !== 'decide') return stop(usage('Unknown subcommand. Use: zof gate decide --environment <name>'));
   // GitHub masks the value in every later log line. stderr keeps stdout to one JSON line under --json.
-  if (token && deps.env.GITHUB_ACTIONS === 'true') deps.write('err', `::add-mask::${token}`);
+  // Only a well-formed single-line token is echoed into the mask; a malformed one is refused below (exit 4) and never printed.
+  if (TOKEN.test(token) && deps.env.GITHUB_ACTIONS === 'true') deps.write('err', `::add-mask::${token}`);
   try {
     const o = parseArgs(args);
     json = o.json;

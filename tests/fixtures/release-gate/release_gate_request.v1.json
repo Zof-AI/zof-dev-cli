@@ -1,0 +1,145 @@
+{
+  "$defs": {
+    "GatePipeline": {
+      "additionalProperties": false,
+      "properties": {
+        "job": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[\\x21-\\x7e]+$",
+          "title": "Job",
+          "type": "string"
+        },
+        "provider": {
+          "$ref": "#/$defs/Provider"
+        },
+        "run_attempt": {
+          "minimum": 1,
+          "title": "Run Attempt",
+          "type": "integer"
+        },
+        "run_id": {
+          "maxLength": 128,
+          "minLength": 1,
+          "pattern": "^[\\x21-\\x7e]+$",
+          "title": "Run Id",
+          "type": "string"
+        },
+        "run_url": {
+          "anyOf": [
+            {
+              "maxLength": 2048,
+              "pattern": "^https://[\\x21-\\x7e]+$",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Run Url"
+        }
+      },
+      "required": [
+        "provider",
+        "run_id",
+        "run_attempt",
+        "job"
+      ],
+      "title": "GatePipeline",
+      "type": "object"
+    },
+    "Provider": {
+      "enum": [
+        "github_actions",
+        "gitlab_ci",
+        "bitbucket",
+        "azure_pipelines",
+        "jenkins",
+        "circleci",
+        "other"
+      ],
+      "title": "Provider",
+      "type": "string"
+    }
+  },
+  "$id": "urn:zof:control:release_gate_request:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "description": "POST /v1/gate/checks's body (gate.v1, EVENT_SAMPLES v3.110): may this commit deploy to this environment. The tenant comes only from the pipeline token.",
+  "properties": {
+    "break_glass_reason": {
+      "anyOf": [
+        {
+          "maxLength": 500,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Break Glass Reason"
+    },
+    "commit_sha": {
+      "pattern": "^[0-9a-f]{40}$",
+      "title": "Commit Sha",
+      "type": "string"
+    },
+    "environment": {
+      "pattern": "^[a-z][a-z0-9-]{0,62}$",
+      "title": "Environment",
+      "type": "string"
+    },
+    "pipeline": {
+      "$ref": "#/$defs/GatePipeline"
+    },
+    "pull_request": {
+      "anyOf": [
+        {
+          "minimum": 1,
+          "type": "integer"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Pull Request"
+    },
+    "ref": {
+      "anyOf": [
+        {
+          "maxLength": 255,
+          "minLength": 1,
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ],
+      "default": null,
+      "title": "Ref"
+    },
+    "repo": {
+      "pattern": "^[A-Za-z0-9-]{1,39}/[A-Za-z0-9._-]{1,100}$",
+      "title": "Repo",
+      "type": "string"
+    },
+    "schema_version": {
+      "const": 1,
+      "title": "Schema Version",
+      "type": "integer"
+    }
+  },
+  "required": [
+    "schema_version",
+    "repo",
+    "commit_sha",
+    "environment",
+    "pipeline"
+  ],
+  "title": "ReleaseGateRequest",
+  "type": "object"
+}
