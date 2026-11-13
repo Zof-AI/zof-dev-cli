@@ -15,7 +15,7 @@ export type {GateAnswer, GateRequest, Provider} from './types.js';
 /** Runs the gate with the real process, clock and network. */
 export function runGate(argv: string[], version: string): Promise<ExitCode> {
   return gateCommand(argv, {
-    version, env: process.env, http: fetchHttpClient, now: Date.now, random: Math.random,
+    version, env: process.env, http: fetchHttpClient, now: () => performance.now(), random: Math.random,
     sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
     readFile: path => readFile(path, 'utf8'),
     write: (stream, line) => (stream === 'out' ? process.stdout : process.stderr).write(line + '\n'),

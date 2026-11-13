@@ -145,7 +145,10 @@ test('token redaction: the token never reaches the log, even when echoed back',a
   const asJson=await run({argv:[...args,'--json'],responses:[json(201,answer({reasons:[{code:'X',message:'leak '+TOKEN,remedy:null}]}))]});
   assert.ok(!asJson.out.includes(TOKEN));const outLines=asJson.lines.filter(l=>l.stream==='out');assert.equal(outLines.length,1);assert.equal(JSON.parse(outLines[0].line).gate_id,GATE);
   assert.equal(redact('a zgt_abc-_9 b zbg_x zdt_y zct_z'),'a zgt_[redacted] b zbg_[redacted] zdt_[redacted] zct_[redacted]');
-  assert.equal(redact('::set-output name=x::y'),' ::set-output name=x::y');
+  // The runner trims leading whitespace before parsing commands, so a space is not enough.
+  for(const line of ['::set-output name=x::y','  ::error::x','\t::add-mask::x',' \t ##[group]x','##vso[task.setvariable]x','a\n  ::warning::b'])
+    for(const out of redact(line).split('\n'))assert.ok(!/^\s*(::|##\[|##vso\[)/.test(out),JSON.stringify(out));
+  assert.equal(redact('::set-output name=x::y'),'> ::set-output name=x::y');assert.equal(redact('fine :: here'),'fine :: here');
 });
 
 test('GitHub Actions: masks the token first, and detects the PR head commit',async()=>{
@@ -180,4 +183,62 @@ test('the zof CLI dispatches gate decide through the thin adapter, with no netwo
   const r=spawnSync(process.execPath,[resolve('dist/cli.js'),'gate','decide','--environment','production'],{encoding:'utf8',env,timeout:10000});
   assert.equal(r.status,EXIT.config);assert.match(r.stdout,/ZOF_GATE_TOKEN is not set/);
   assert.equal(spawnSync(process.execPath,[resolve('dist/cli.js'),'gate','decide','--help'],{encoding:'utf8',env,timeout:10000}).status,EXIT.pass);
+});
+
+// Review round 1.
+test('GitHub Actions with --json: the mask goes to stderr and stdout holds exactly one JSON line',async()=>{
+  const env={...baseEnv,GITHUB_ACTIONS:'true'};
+  const r=await run({env,argv:[...args,'--json'],responses:[json(201,answer())]});
+  assert.equal(r.code,EXIT.pass);const out=r.lines.filter(l=>l.stream==='out');assert.equal(out.length,1);assert.equal(JSON.parse(out[0].line).gate_id,GATE);
+  assert.deepEqual(r.lines[0],{stream:'err',line:'::add-mask::'+TOKEN});
+});
+
+test('4xx without a Zof code is a proxy or firewall: exit 3 with the status; 408 is retried; 401 stays 4; 404 stays per A',async()=>{
+  for(const status of [400,403,405,418]){const r=await run({responses:[{status,headers:{'content-type':'text/html'},text:'<html>blocked</html>'}]});assert.equal(r.code,EXIT.unavailable,String(status));assert.match(r.out,new RegExp(`HTTP ${status}`));assert.match(r.out,/on Zof's side/);}
+  const timeout=await run({responses:[json(408,{})]});assert.equal(timeout.code,EXIT.unavailable);assert.ok(timeout.requests.length>1,'408 retried');
+  const recovered=await run({responses:[json(408,{}),json(201,answer())]});assert.equal(recovered.code,EXIT.pass);
+  assert.equal((await run({responses:[{status:401,headers:{},text:''}]})).code,EXIT.token);
+  assert.equal((await run({responses:[{status:404,headers:{},text:''}]})).code,EXIT.config);
+  assert.equal((await run({responses:[json(403,fail('some_new_code'))]})).code,EXIT.token);
+});
+
+test('gate_id is pinned end to end: a pass for another gate on a poll is no answer',async()=>{
+  const r=await run({responses:[json(202,waiting()),json(200,answer({gate_id:'gate_'+'b'.repeat(32)}))]});assert.equal(r.code,EXIT.unavailable);
+});
+
+test('Retry-After is capped at 60 s, and one past --max-wait exits 3 at once',async()=>{
+  const capped=await run({responses:[json(503,fail('unavailable'),{'retry-after':'120'})]});assert.ok(capped.sleeps.length>0&&capped.sleeps.every(ms=>ms===60000),String(capped.sleeps));
+  const late=await run({argv:[...args,'--max-wait','1'],responses:[(req,{advance})=>{advance(30000);return json(503,fail('unavailable'),{'retry-after':'45'});}]});
+  assert.equal(late.code,EXIT.unavailable);assert.equal(late.requests.length,1);assert.deepEqual(late.sleeps,[]);
+});
+
+test('poll_after_seconds is clamped to 1-60 s',async()=>{
+  for(const [poll,ms] of [[0,1000],[3600,60000],[-5,1000]]){const r=await run({responses:[json(202,waiting({poll_after_seconds:poll})),json(200,answer())]});assert.equal(r.code,EXIT.pass);assert.deepEqual(r.sleeps,[ms],String(poll));}
+});
+
+test('runner clock skew: the server deadline is read as wait_until - answered_at, not against the local clock',async()=>{
+  const skewed=waiting({wait_until:'2020-01-01T00:10:00Z',answered_at:'2020-01-01T00:00:00Z'});
+  const r=await run({responses:[json(202,skewed),json(200,skewed),json(200,answer())]});assert.equal(r.code,EXIT.pass,r.out);
+});
+
+test('help exits 0 only on its own; stray flags and a missing subcommand exit 2',async()=>{
+  for(const argv of [['--help'],['-h'],['help'],['decide','--help']])assert.equal((await run({argv})).code,EXIT.pass,argv.join(' '));
+  const mixed=await run({argv:[...args,'--help'],responses:[json(201,answer())]});assert.equal(mixed.code,EXIT.config);assert.equal(mixed.requests.length,0);
+  const bare=await run({argv:['--environment','x'],responses:[json(201,answer())]});assert.equal(bare.code,EXIT.config);assert.match(bare.out,/Unknown subcommand\. Use: zof gate decide --environment <name>/);
+  assert.equal((await run({argv:[]})).code,EXIT.config);
+});
+
+test('repo matches case-insensitively; commit and environment stay exact',async()=>{
+  assert.equal((await run({responses:[json(201,answer({repo:'ACME/App'}))]})).code,EXIT.pass);
+  assert.equal((await run({responses:[json(201,answer({environment:'Production'}))]})).code,EXIT.unavailable);
+});
+
+test('polish: reasons_total type-checked, --json errors are one line, clear next steps',async()=>{
+  assert.equal((await run({responses:[json(201,answer({reasons_total:'lots'}))]})).code,EXIT.unavailable);
+  for(const [responses,env,exit] of [[[json(422,fail('unknown_environment'))],baseEnv,2],[[new Error('down')],baseEnv,3],[[json(401,fail('unauthorized'))],baseEnv,4],[[],{ZOF_API_URL:API},2]]){
+    const r=await run({env,argv:[...args,'--json'],responses});assert.equal(r.code,exit);const out=r.lines.filter(l=>l.stream==='out');assert.equal(out.length,1,r.out);
+    const e=JSON.parse(out[0].line).error;assert.equal(e.exit,exit);assert.equal(typeof e.code,'string');
+  }
+  assert.match((await run({env:{ZOF_GATE_TOKEN:TOKEN}})).out,/Pipeline tokens/);
+  assert.match((await run({argv:[...args,'--break-glass','x']})).out,/later release.*contact Zof support/);
 });

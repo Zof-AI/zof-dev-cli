@@ -9,7 +9,7 @@ export interface GateDeps {
   version: string;
   env: Env;
   http: HttpClient;
-  now: () => number;
+  now: () => number; // monotonic milliseconds (performance.now in production)
   sleep: (ms: number) => Promise<void>;
   random: () => number;
   readFile: ReadFile;
@@ -32,7 +32,8 @@ Options: --environment NAME (required unless the CI sets one) --repo OWNER/NAME 
 Env: ZOF_GATE_TOKEN (required, a zgt_ pipeline token; never a flag), ZOF_API_URL.
 Exit 0 pass, 1 blocked, 2 pipeline configuration, 3 Zof unavailable (never a pass), 4 pipeline token.`;
 
-class Stop extends Error { constructor(readonly exit: ExitCode, readonly detail: string) { super(detail); } }
+const ERROR_CODES: Record<ExitCode, string> = {0: 'pass', 1: 'blocked', 2: 'invalid_configuration', 3: 'unavailable', 4: 'token_problem'};
+class Stop extends Error { constructor(readonly exit: ExitCode, readonly detail: string, readonly code: string = ERROR_CODES[exit]) { super(detail); } }
 const usage = (detail: string) => new Stop(EXIT.config, detail);
 
 interface Options {environment?: string; repo?: string; commit?: string; ref?: string; pr?: string; runId?: string; runUrl?: string; maxWait?: string; apiUrl?: string; noWait: boolean; json: boolean; help: boolean}
@@ -45,7 +46,7 @@ function parseArgs(argv: string[]): Options {
     if (flag === '--no-wait') { o.noWait = true; continue; }
     if (flag === '--json') { o.json = true; continue; }
     if (flag === '--help' || flag === '-h') { o.help = true; continue; }
-    if (flag === '--break-glass') throw usage('--break-glass is not available in this version of zof gate.');
+    if (flag === '--break-glass') throw usage('--break-glass arrives in a later release of zof gate; until then contact Zof support.');
     const key = VALUE_FLAGS[flag];
     if (!key) throw usage(`Unknown option ${flag.slice(0, 40)}. Run zof gate decide --help.`);
     const value = inline ?? argv[++i];
@@ -56,7 +57,7 @@ function parseArgs(argv: string[]): Options {
 }
 
 function apiBase(raw: string | undefined): string {
-  if (!raw) throw usage('ZOF_API_URL is not set. Set it (or pass --api-url) to your Zof Control Plane URL.');
+  if (!raw) throw usage('ZOF_API_URL is not set. Set it (or pass --api-url) to the Control Plane URL shown in the Zof console under Settings > Pipeline tokens.');
   let url: URL;
   try { url = new URL(raw); } catch { throw usage('ZOF_API_URL is not a valid URL.'); }
   const local = ['localhost', '127.0.0.1', '[::1]'].includes(url.hostname);
@@ -117,21 +118,23 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
   const secrets = token ? [token] : [];
   let json = false;
   const say = (line: string) => deps.write(json ? 'err' : 'out', redact(line, secrets));
-  const stop = (exit: ExitCode, detail: string): ExitCode => {
-    say(`${SIDE[exit as keyof typeof SIDE] ?? 'Zof gate'}: ${detail}`);
-    if (exit === EXIT.unavailable) say("The deploy is blocked: the gate fails closed and never passes without an answer from Zof. Next: re-run the job in a few minutes; if it keeps failing, contact Zof support.");
-    return exit;
+  const stop = (error: Stop): ExitCode => {
+    say(`${SIDE[error.exit as keyof typeof SIDE] ?? 'Zof gate'}: ${error.detail}`);
+    if (error.exit === EXIT.unavailable) say("The deploy is blocked: the gate fails closed and never passes without an answer from Zof. Next: re-run the job in a few minutes; if it keeps failing, contact Zof support.");
+    if (json) deps.write('out', JSON.stringify({error: {code: redact(error.code, secrets), exit: error.exit}}));
+    return error.exit;
   };
-  const asksHelp = args.includes('--help') || args.includes('-h') || argv[0] === 'help';
-  if (argv[0] !== 'decide' || asksHelp) {
-    deps.write('out', GATE_HELP);
-    return asksHelp ? EXIT.pass : EXIT.config;
-  }
-  // GitHub masks the value in every later log line; this line itself is consumed by the runner.
-  if (token && deps.env.GITHUB_ACTIONS === 'true') deps.write('out', `::add-mask::${token}`);
+  // Help exits 0 only when it is the only argument.
+  const helpOnly = (a: string[]) => a.length === 1 && ['--help', '-h', 'help'].includes(a[0]);
+  if (helpOnly(argv) || helpOnly(args)) { deps.write('out', GATE_HELP); return EXIT.pass; }
+  if (argv.length === 0) { deps.write('out', GATE_HELP); return EXIT.config; }
+  if (argv[0] !== 'decide') return stop(usage('Unknown subcommand. Use: zof gate decide --environment <name>'));
+  // GitHub masks the value in every later log line. stderr keeps stdout to one JSON line under --json.
+  if (token && deps.env.GITHUB_ACTIONS === 'true') deps.write('err', `::add-mask::${token}`);
   try {
     const o = parseArgs(args);
     json = o.json;
+    if (o.help) throw usage('--help cannot be combined with other options. Run zof gate decide --help.');
     if (!token) throw usage('ZOF_GATE_TOKEN is not set. Add your pipeline token as a CI secret named ZOF_GATE_TOKEN.');
     if (!TOKEN.test(token)) throw new Stop(EXIT.token, 'ZOF_GATE_TOKEN does not look like a Zof pipeline token (it starts with zgt_). Next: copy the token from Zof Settings > Pipeline tokens into the CI secret.');
     const base = apiBase(o.apiUrl ?? deps.env.ZOF_API_URL);
@@ -154,7 +157,7 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
         let delay: number | undefined;
         try {
           const r = await deps.http({method, url, headers: {...headers, ...extra}, ...(payload !== undefined ? {body: payload} : {}), timeoutMs});
-          if (r.status !== 429 && r.status < 500) return r;
+          if (r.status !== 408 && r.status !== 429 && r.status < 500) return r;
           const e = errorBody(r.text);
           why = `HTTP ${r.status}${e.code ? ` ${e.code}` : ''}`;
           delay = retryAfterMs(r.headers);
@@ -178,12 +181,21 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
       if (r.status < 400) throw new Stop(EXIT.unavailable, `unexpected HTTP ${r.status} from ${base}.`);
       const e = errorBody(r.text);
       // Agreed with A: a 404 on a gate id this CLI just created is Zof's fault (3); a 404 on the first call stays 2.
-      if (polling && r.status === 404) throw new Stop(EXIT.unavailable, 'Zof lost track of this gate check while it was waiting.');
+      if (polling && r.status === 404) throw new Stop(EXIT.unavailable, 'Zof lost track of this gate check while it was waiting.', 'not_found');
+      // Zof always sends a {code, detail} body; a bare 4xx (other than 401 and 404) came from a proxy or firewall in front of it.
+      if (!e.code && r.status !== 401 && r.status !== 404) throw new Stop(EXIT.unavailable, `HTTP ${r.status} with no Zof error code from ${base}; a proxy or firewall in front of Zof answered.`, `http_${r.status}`);
       const ref = refusal(r.status, e.code);
-      throw new Stop(ref.exit, `${ref.text} (code: ${ref.code})${e.detail ? `\n  Zof says: ${e.detail}` : ''}`);
+      throw new Stop(ref.exit, `${ref.text} (code: ${ref.code})${e.detail ? `\n  Zof says: ${e.detail}` : ''}`, ref.code);
     };
 
-    let answer = read(await send('POST', `${base}/v1/gate/checks`, 30_000, {'content-type': 'application/json', 'idempotency-key': idempotencyKey}, body), false);
+    // Server deadline on the local monotonic clock: wait_until - answered_at from the server, anchored at receipt, so runner clock skew can't matter.
+    let serverDeadline = Infinity;
+    const anchor = (a: GateAnswer): GateAnswer => {
+      const remaining = Date.parse(a.wait_until ?? '') - Date.parse(typeof a.answered_at === 'string' ? a.answered_at : '');
+      if (Number.isFinite(remaining)) serverDeadline = Math.min(serverDeadline, deps.now() + remaining);
+      return a;
+    };
+    let answer = anchor(read(await send('POST', `${base}/v1/gate/checks`, 30_000, {'content-type': 'application/json', 'idempotency-key': idempotencyKey}, body), false));
     expect.gate_id = answer.gate_id;
     let lastWaiting = '';
     const finish = (exit: ExitCode): ExitCode => { if (json) deps.write('out', redact(JSON.stringify(answer), secrets)); return exit; };
@@ -201,15 +213,14 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
         say(`Next: fix the reasons above, then re-run the job.${answer.console_url ? ` See ${answer.console_url}` : ''}`);
         return finish(EXIT.blocked);
       }
-      const serverDeadline = answer.wait_until ? Date.parse(answer.wait_until) : NaN;
-      const deadline = Number.isFinite(serverDeadline) ? Math.min(localDeadline, serverDeadline + SERVER_GRACE_MS) : localDeadline;
+      const deadline = Math.min(localDeadline, serverDeadline + SERVER_GRACE_MS);
       const what = answer.waiting_for ?? 'a decision';
       const keys = answer.reasons.map(r => r.requirement_key).filter((k): k is string => typeof k === 'string');
       const summary = `Waiting for ${what}${keys.length ? `: ${keys.slice(0, 3).join(', ')}${keys.length > 3 ? ` and ${keys.length - 3} more` : ''}` : ''}${answer.approve_url ? ` (approve at ${answer.approve_url})` : ''}`;
       if (summary !== lastWaiting) { say(`${summary} · up to ${Math.max(1, Math.ceil((deadline - deps.now()) / 60_000))} min`); lastWaiting = summary; }
       if (o.noWait) { say(`Not passed yet: Zof is still waiting for ${what}. --no-wait answers once; this job is blocked.`); return finish(EXIT.blocked); }
       const now = deps.now();
-      if (Number.isFinite(serverDeadline) && now >= serverDeadline + SERVER_GRACE_MS) throw new Stop(EXIT.unavailable, 'Zof kept waiting past its own deadline without a final answer.');
+      if (now >= serverDeadline + SERVER_GRACE_MS) throw new Stop(EXIT.unavailable, 'Zof kept waiting past its own deadline without a final answer.');
       if (now >= localDeadline) {
         say(`Timed out: still waiting for ${what} after ${Math.round(wait / 60_000)} min (--max-wait). This job is blocked.`);
         say(`Next: ${answer.approve_url ? `approve at ${answer.approve_url}, then ` : answer.console_url ? `check ${answer.console_url}, then ` : ''}re-run the job, or raise --max-wait (up to the limit set in Zof).`);
@@ -218,10 +229,10 @@ export async function gateCommand(argv: string[], deps: GateDeps): Promise<ExitC
       const poll = Math.min(60, Math.max(1, answer.poll_after_seconds ?? 5)) * 1000 * (0.8 + deps.random() * 0.4);
       await deps.sleep(Math.max(0, Math.min(poll, deadline - deps.now())));
       const waitS = Math.max(0, Math.min(LONG_POLL_SECONDS, Math.floor((localDeadline - deps.now()) / 1000)));
-      answer = read(await send('GET', `${base}/v1/gate/checks/${encodeURIComponent(answer.gate_id)}?wait=${waitS}`, (waitS + 15) * 1000), true);
+      answer = anchor(read(await send('GET', `${base}/v1/gate/checks/${encodeURIComponent(answer.gate_id)}?wait=${waitS}`, (waitS + 15) * 1000), true));
     }
   } catch (error) {
-    if (error instanceof Stop) return stop(error.exit, error.detail);
-    return stop(EXIT.unavailable, `an unexpected error stopped the gate (${String((error as Error)?.message ?? error).slice(0, 200)}).`);
+    if (error instanceof Stop) return stop(error);
+    return stop(new Stop(EXIT.unavailable, `an unexpected error stopped the gate (${String((error as Error)?.message ?? error).slice(0, 200)}).`));
   }
 }

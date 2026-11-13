@@ -8,5 +8,6 @@ export function redact(text: string, secrets: readonly string[] = []): string {
   let out = String(text);
   for (const secret of secrets) if (secret.length >= 8) out = out.split(secret).join('[redacted]');
   out = out.replace(TOKEN, (_m, prefix: string) => `${prefix}_[redacted]`).replace(CONTROL, '');
-  return out.split('\n').map(line => (line.startsWith('::') ? ' ' + line : line)).join('\n');
+  // The runner trims leading whitespace before it parses a command, so prefix a visible character.
+  return out.split('\n').map(line => (/^\s*(::|##\[|##vso\[)/.test(line) ? '> ' + line : line)).join('\n');
 }
