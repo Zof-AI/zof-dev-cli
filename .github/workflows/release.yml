@@ -62,10 +62,16 @@ jobs:
         run: |
           mkdir -p dist-pack
           tarball="$(npm pack --ignore-scripts --pack-destination dist-pack | tail -n 1)"
-          sha256="$(sha256sum "dist-pack/$tarball" | cut -d' ' -f1)"
+          sha256="$(sha256sum "./dist-pack/$tarball" | cut -d' ' -f1)"
           echo "tarball=$tarball" >> "$GITHUB_OUTPUT"
           echo "sha256=$sha256" >> "$GITHUB_OUTPUT"
           echo "Packed $tarball sha256 $sha256" >> "$GITHUB_STEP_SUMMARY"
+      - name: Install npm 11.5+ (same npm as the publish job)
+        run: npm install --global --ignore-scripts npm@11.21.1
+      - name: Dry-run the publish of the packed tarball
+        env:
+          TARBALL: ${{ steps.pack.outputs.tarball }}
+        run: npm publish "./dist-pack/$TARBALL" --dry-run --access public
       - uses: actions/upload-artifact@330a01c490aca151604b8cf639adc76d48f6c5d4 # v5.0.0
         with:
           name: npm-tarball
@@ -98,8 +104,9 @@ jobs:
         env:
           TARBALL: ${{ needs.candidate.outputs.tarball }}
           EXPECTED: ${{ needs.candidate.outputs.sha256 }}
-        run: echo "$EXPECTED  dist-pack/$TARBALL" | sha256sum --check --strict
+        run: echo "$EXPECTED  ./dist-pack/$TARBALL" | sha256sum --check --strict
       - name: Publish with provenance
         env:
           TARBALL: ${{ needs.candidate.outputs.tarball }}
-        run: npm publish "dist-pack/$TARBALL" --access public --provenance
+        # The ./ prefix matters: npm reads "dist-pack/x.tgz" as GitHub shorthand, not a file.
+        run: npm publish "./dist-pack/$TARBALL" --access public --provenance
