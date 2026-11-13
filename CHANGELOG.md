@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Add `zof gate decide`, the client core for the Zof release gate (not yet released).
+
 ## 0.1.2
 
 Document public installation, executable entry points and reproducible packaged examples. Align release dependency pins; runtime behavior is unchanged.
