@@ -1,6 +1,6 @@
 {
   "name": "@zof-ai/cli",
-  "version": "0.1.2",
+  "version": "0.1.3",
   "description": "Local static change verification, evidence and policy command-line tools",
   "type": "module",
   "main": "./dist/index.js",
