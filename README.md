@@ -2,6 +2,23 @@
 
 Run local static change checks, inspect dependencies, execute explicitly trusted test commands and produce portable verification evidence. Developers and CI maintainers can use every local command without an account. The source repository is `Zof-AI/zof-dev-cli`; the package identifier is `@zof-ai/cli`. npm and GitHub source installation are documented below.
 
+## CI/CD release gate (next release)
+
+`zof gate --environment production` asks Zof whether a pipeline commit may deploy. It uses the same client as
+`zof-gate` and the GitHub Action. The existing `zof gate decide` spelling remains an alias.
+
+Set `ZOF_GATE_TOKEN` and `ZOF_API_URL` in the pipeline environment; tokens are never command-line flags.
+Use `zof gate --help` for provider overrides, `--no-wait`, `--max-wait`, `--json` and `--break-glass`.
+GitHub Actions, GitLab, Bitbucket, Azure Pipelines, Jenkins, CircleCI and explicit CI flags use the shared detector.
+
+Exit 0 permits the deploy. Every other exit stops it: 1 blocked, 2 configuration, 3 Zof unavailable,
+4 token problem. `--json` writes the shared answer to stdout and progress to stderr. Error wording and strict
+answer validation come from the shared client; consumers should use exit codes instead of parsing prose.
+
+**Release dependency:** this source change requires the first `@zof-ai/gate@0.1.0` release with `runGateCli`.
+It is not part of published CLI 0.1.3 yet. Before releasing the next CLI version, install that published package,
+refresh its lockfile integrity, and run the release checks. No local file dependency is committed.
+
 <!-- ZOF_NPM_INSTALL_START -->
 ## Install from npm
 

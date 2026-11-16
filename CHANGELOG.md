@@ -1,5 +1,11 @@
 # Changelog
 
+## Unreleased
+
+- Add `zof gate --environment NAME` using the shared `@zof-ai/gate` client; retain `zof gate decide` as an alias.
+- Use the shared provider detection, strict gate-answer validation, redaction, break-glass handling and exits 0–4.
+- Release requires `@zof-ai/gate@0.1.0` with the exported command API. This dependency is not published yet.
+
 ## 0.1.3
 
 - Add `zof gate decide`, which asks Zof whether a commit may deploy and waits up to 10 minutes by default for the answer.
