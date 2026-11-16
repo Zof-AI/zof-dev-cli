@@ -15,7 +15,7 @@ Exit 0 permits the deploy. Every other exit stops it: 1 blocked, 2 configuration
 4 token problem. `--json` writes the shared answer to stdout and progress to stderr. Error wording and strict
 answer validation come from the shared client; consumers should use exit codes instead of parsing prose.
 
-**Release dependency:** this source change requires the first `@zof-ai/gate@0.1.0` release with `runGateCli`.
+**Release dependency:** this source change requires the first `@zof-ai/gate@1.0.0` release with `runGateCli`.
 It is not part of published CLI 0.1.3 yet. Before releasing the next CLI version, install that published package,
 refresh its lockfile integrity, and run the release checks. No local file dependency is committed.
 

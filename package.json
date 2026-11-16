@@ -65,6 +65,6 @@
     "@zof-ai/test-selection": "0.1.2",
     "@zof-ai/testgen": "0.1.1",
     "@zof-ai/ci-evidence": "0.1.1",
-    "@zof-ai/gate": "0.1.0"
+    "@zof-ai/gate": "1.0.0"
   }
 }
