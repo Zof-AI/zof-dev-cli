@@ -4,7 +4,7 @@
 
 - Add `zof gate --environment NAME` using the shared `@zof-ai/gate` client; retain `zof gate decide` as an alias.
 - Use the shared provider detection, strict gate-answer validation, redaction, break-glass handling and exits 0–4.
-- Release requires `@zof-ai/gate@1.0.0` with the exported command API. This dependency is not published yet.
+- Depend on the published `@zof-ai/gate@1.0.2` command API (`runGateCli`).
 
 ## 0.1.3
 
