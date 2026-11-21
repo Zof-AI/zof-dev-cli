@@ -1,5 +1,13 @@
 # Changelog
 
+## Unreleased
+
+- Add `zof login`, `zof run` and `zof logout`: sign in with the console's device flow (a 12-hour `runs` sign-in kept
+  only in the OS keychain), plan a test run, see each test's gate and the price, confirm, start and follow it.
+  `zof run cancel` cancels; Ctrl-C only stops following.
+- Add the pinned native keychain binding `@napi-rs/keyring` 2.1.2.
+- `zofcli_` sign-ins are redacted from output like the other Zof tokens.
+
 ## 0.1.3
 
 - Add `zof gate decide`, which asks Zof whether a commit may deploy and waits up to 10 minutes by default for the answer.
