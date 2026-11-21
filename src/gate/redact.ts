@@ -1,5 +1,5 @@
-/** Zof credential prefixes: pipeline, break-glass, deploy and console tokens. */
-const TOKEN = /(zgt|zbg|zdt|zct)_[A-Za-z0-9_-]+/g;
+/** Zof credential prefixes: pipeline, break-glass, deploy, console and CLI sign-in tokens. */
+const TOKEN = /(zgt|zbg|zdt|zct|zofcli)_[A-Za-z0-9_-]+/g;
 // eslint-disable-next-line no-control-regex
 const CONTROL = /[\u0000-\u0008\u000b-\u001f\u007f\u009b]/g;
 

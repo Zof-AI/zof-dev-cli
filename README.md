@@ -93,6 +93,30 @@ Initialization exclusively creates `zof.config.json`; it will not overwrite one.
 
 `--json` selects structured reports. `--root DIR` sets the workspace. `--base REF [--head REF]` compares revisions; the checkout must match an explicitly supplied head. Repeated `--changed PATH` supplies explicit relative files. `--fail-on` selects info/low/medium/high/critical (default high). Exit 0 is a successful completed check, 1 is a configured failure and 2 is invalid, missing or incomplete execution. Standard errors are concise; JSON reports contain detailed structured findings without source excerpts.
 
+## Test runs on Zof (`zof login`, `zof run`, `zof logout`)
+
+These commands talk to your Zof console; everything above stays offline.
+
+```sh
+zof login --console-url https://<your Zof console>   # or set ZOF_CONSOLE_URL
+zof run --repo acme/app --pr 12 --site https://staging.acme.example --site-env staging --category security
+zof run cancel mrun_…
+zof logout
+```
+
+- `zof login` uses the console's device flow: open the link it prints, confirm the code, and the CLI receives a sign-in
+  for test runs only. It lasts 12 hours. It is kept **only in your OS keychain** (macOS Keychain, Windows Credential
+  Manager, or a Secret Service keyring on Linux) through a pinned native binding; on Linux without the binding it uses
+  `secret-tool`, which reads the secret from stdin. With no keychain, `zof login` refuses: the sign-in is never written
+  to a file, never read from an environment variable, and never passed in any process's arguments.
+- `zof run` plans the tests, prints each with its gate and the price, asks `Run N tests for <price>? [y/N]`, then starts
+  exactly the ticked tests with the plan's fingerprint and only the origins you pass with `--authorize`, and follows the
+  run. `--yes` skips the question only when stdin is not a terminal. Ctrl-C stops following and never cancels; use
+  `zof run cancel`. `--pr` without `--commit` reads the pull request's head from this checkout's `origin`.
+- These runs are for testing only; they never change whether a pull request can ship.
+- Exit codes: 0 all passed, 1 issues found or not all checked, 2 invalid input or a refusal (the console's code is
+  printed), 3 Zof unavailable (`Retry-After` is honoured), 4 not signed in or the sign-in expired.
+
 ## Trusted test execution
 
 Configure `testCommands` with `{name,argv,timeoutMs}` and a maximum timeout of 300000 ms. `argv[0]` is an executable, never a shell string. Tests run only on an explicit `test --allow-exec` invocation. This executes code with the caller's filesystem permissions; use only trusted commands. Untrusted AI candidates belong in the isolated evaluator. No command executes during static verification, init, policy or IDE/MCP analysis. Child output is discarded; only status and duration are recorded. Environment inheritance is limited to executable lookup and platform/temp variables. Do not put credentials in argv.
