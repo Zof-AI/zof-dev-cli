@@ -19,6 +19,8 @@ const RUN_ID = /^mrun_[0-9A-HJKMNP-TV-Z]{26}$/i;
 const CATEGORY = /^[a-z][a-z0-9_]{0,31}$/;
 const ENVIRONMENT = /^[a-z][a-z0-9_-]{0,31}$/;
 const ORIGIN = /^https?:\/\/[^/\s]+$/;
+// Exactly github.com, by its three remote forms: a host or path that only contains github.com is never trusted.
+const GITHUB_REMOTE = /^(?:https:\/\/github\.com\/|git@github\.com:|ssh:\/\/git@github\.com\/)([A-Za-z0-9_.-]{1,100}\/[A-Za-z0-9_.-]{1,100}?)(?:\.git)?$/i;
 const TERMINAL = ['finished', 'cancelled', 'failed', 'timed_out'];
 const PLAN_WAIT_MS = 120_000;
 const POLL_MS = 2_000;
@@ -66,7 +68,7 @@ function validate(o: Options) {
 async function prHead(deps: RunDeps, repo: string, pr: string): Promise<string> {
   const fail = usage(`Could not read pull request #${pr}'s head from this checkout. Run inside a clone of ${repo}, or pass --commit with its head SHA.`);
   const remote = await deps.spawn('git', ['remote', 'get-url', 'origin']).catch(() => null);
-  const named = remote?.code === 0 ? /github\.com[:/]([^/\s]+\/[^/\s]+?)(?:\.git)?\s*$/i.exec(remote.stdout)?.[1] : undefined;
+  const named = remote?.code === 0 ? GITHUB_REMOTE.exec(remote.stdout.replace(/\r?\n$/, ''))?.[1] : undefined;
   if (!named || named.toLowerCase() !== repo.toLowerCase()) throw fail;
   const listed = await deps.spawn('git', ['ls-remote', '--', 'origin', `refs/pull/${pr}/head`]).catch(() => null);
   const sha = listed?.code === 0 ? listed.stdout.trim().split(/\s+/)[0]?.toLowerCase() : undefined;

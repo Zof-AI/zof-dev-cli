@@ -190,6 +190,27 @@ test('run --pr reads the head from this checkout, only when origin is that repos
   assert.equal(other.code,EXIT.config);assert.match(other.out,/--commit/);assert.ok(!other.requests.some(q=>q.path==='/api/runs/plan'));
 });
 
+test('run --pr trusts only a github.com origin, parsed exactly',async()=>{
+  const argv=['--repo','acme/app','--pr','12','--site','https://staging.example.test','--category','security','--yes'];
+  const remote=url=>(c,a)=>a[0]==='remote'?{code:0,stdout:url+'\n'}:{code:0,stdout:`${SHA}\trefs/pull/12/head\n`};
+  for(const url of ['https://github.com/acme/app','https://github.com/acme/app.git','git@github.com:acme/app.git','ssh://git@github.com/acme/app.git','https://github.com/ACME/App']){
+    const r=await harness('run',argv,{routes:happyRoutes(),spawnScript:remote(url)});assert.equal(r.code,EXIT.pass,url+' '+r.out);
+  }
+  for(const url of ['https://evil.example/github.com/acme/app','git@evil.example:github.com/acme/app.git','https://evil.example/github.com:acme/app','https://github.com.evil.example/acme/app','https://user@github.com/acme/app','http://github.com/acme/app',
+    'https://github.com/acme/app/extra','ssh://git@evil.example/github.com/acme/app','https://github.com/acme/app.git.evil','git@github.com:acme/app.git x']){
+    const r=await harness('run',argv,{routes:happyRoutes(),spawnScript:remote(url)});
+    assert.equal(r.code,EXIT.config,url);assert.ok(!r.requests.some(q=>q.path==='/api/runs/plan'),url);assert.ok(!r.spawns.some(s=>s.args[0]==='ls-remote'),url);
+  }
+});
+
+test('server text loses bidi and zero-width characters',async()=>{
+  const sneaky='Head\u200Bers\u202Etxt.exe\u2066x\u2069\u200F\u202A\u2068';
+  const r=await harness('run',[...runArgs,'--yes'],{routes:happyRoutes({[`GET /api/runs/${RUN}`]:[planned({tasks:[task(T1,{title:sneaky})]}),json(200,{run_id:RUN,state:'finished',tasks:[task(T1,{outcome:'passed'})]})]})});
+  const text=r.lines.map(l=>l.line).join('');
+  assert.ok(!/[\u200B-\u200F\u202A-\u202E\u2066-\u2069]/.test(text),'no bidi or zero-width character reaches the terminal');
+  assert.match(r.out,/\[x\] Headerstxt\.exex/);
+});
+
 test('run cancel cancels the named run',async()=>{
   const r=await harness('run',['cancel',RUN],{routes:{[`POST /api/runs/${RUN}/cancel`]:[json(202,{run_id:RUN})]}});
   assert.equal(r.code,EXIT.pass);assert.deepEqual(r.requests[0].json,{});assert.match(r.out,/Cancelling/);

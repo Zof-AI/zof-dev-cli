@@ -60,10 +60,13 @@ export function consoleBase(raw: string | undefined): string {
   return url.origin;
 }
 
-/** Strips control characters (no terminal escapes from a server string) and bounds the length. */
+/** Strips control characters (no terminal escapes) and bidi or zero-width marks (no text that reads differently), then bounds the length. */
 export function clean(value: unknown, max = 300): string {
-  // eslint-disable-next-line no-control-regex
-  return String(value ?? '').replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ').replace(/\s+/g, ' ').trim().slice(0, max);
+  return String(value ?? '')
+    // eslint-disable-next-line no-control-regex
+    .replace(/[\u0000-\u001f\u007f-\u009f]/g, ' ')
+    .replace(/[\u200b-\u200f\u202a-\u202e\u2066-\u2069]/g, '')
+    .replace(/\s+/g, ' ').trim().slice(0, max);
 }
 
 export function printer(deps: RunDeps, secrets: readonly string[], json: boolean) {
