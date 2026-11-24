@@ -9,6 +9,10 @@ A clearer terminal for `zof review` and `zof copilot ask`.
 - `zof review --wait` and `zof review show` print a new result layout. It has a headline for the state, the PR and the number of files reviewed, and a summary wrapped to the terminal width and cut to five lines. Each finding has a severity badge, its location and a two-line description. A footer gives the review's short ID and its console link, printed once. No price is shown. `zof review show <id> --full` prints the whole summary and every description.
 - Colour only in a terminal, never with `NO_COLOR`. Without colour the badges read `[HIGH]`. When the locale is not UTF-8 (`LC_ALL`, `LC_CTYPE` or `LANG`, so also when none is set), the output falls back to ASCII.
 - Unchanged: `--json` output, exit codes (0 only for a done, complete review), and polling (5 s, `Retry-After`, timeouts). No new dependency.
+- `zof agents run <key>` now starts a real run, which uses credits. It called a console route that does not exist, so it failed for everyone. It now starts the run on the console's start-run route.
+- `zof agents run` requires `--repo OWNER/NAME`, `--commit SHA` (the full 40 characters) and `--capability KIND`. `--target-repo` is removed (use `--repo`), and so is the unused `--wait`. `--target-url` and `--config` (a JSON object) stay.
+- Before starting, `zof agents run` asks `Continue? [y/N]` in a terminal, as `zof runs create` does. No route prices a single agent run, so no amount is shown. `--yes` skips the question. With no terminal to ask (CI, a pipe), it refuses without `--yes`: exit 2, and nothing is sent.
+- When the console refuses an agent that needs a confirmed address, `zof agents run` says so and links to the agent in the console, instead of "Permission denied".
 
 ## 0.2.0
 

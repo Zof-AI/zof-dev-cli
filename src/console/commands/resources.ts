@@ -1,4 +1,5 @@
-import {UsageError} from '../args.js';
+import {ApiError, consoleOrigin, stripControl} from '../api.js';
+import {UsageError, type Parsed} from '../args.js';
 import {required, seg, type Command, type Ctx} from '../context.js';
 import {banner, formatDuration, formatJson, formatStatus, formatTimestamp, info, keyValue, success, table} from '../output.js';
 import {buildRunCreateBody, RUN_CREATE_TRIGGERS} from '../run-create-body.js';
@@ -71,26 +72,66 @@ const agentsHealth: Command = {
   },
 };
 
+// The console's start-run validator (POST /api/ai-agents/{key}/runs): checked here first so a typo is a usage error.
+const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const COMMIT = /^[0-9a-f]{40}$/i;
+const KIND = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+// dash's address gate (server/address-proof/gate.ts): a heavy agent's run needs a confirmed, proven address.
+const ADDRESS_GATE = new Set(['confirmation_required', 'address_not_verified']);
+const flag = (p: Parsed, name: string, test: RegExp, hint: string): string => {
+  const v = p.flags[name];
+  if (typeof v !== 'string' || !test.test(v)) throw new UsageError(`--${name} ${hint}.`);
+  return v;
+};
+
 const agentsRun: Command = {
-  usage: 'zof agents run <key> [--target-url URL] [--target-repo URL] [--config JSON] [--json]',
-  summary: 'Dispatch an agent',
+  usage: 'zof agents run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON] [--yes] [--json]',
+  summary: 'Start a run of an agent on a commit (uses credits; asks first, or pass --yes)',
   args: ['key'],
-  flags: {'target-url': {kind: 'string'}, 'target-repo': {kind: 'string'}, config: {kind: 'string'}, wait: {kind: 'bool'}},
+  flags: {repo: {kind: 'string'}, commit: {kind: 'string'}, capability: {kind: 'string'}, 'target-url': {kind: 'string'}, config: {kind: 'string'}, yes: {kind: 'bool'}},
   async run(ctx, p) {
     const key = required(p, 0, 'agent key');
+    const repo = flag(p, 'repo', REPO, 'must be OWNER/NAME, e.g. acme/web');
+    const commit = flag(p, 'commit', COMMIT, 'must be a full 40-character commit SHA');
+    const capability = flag(p, 'capability', KIND, 'must be a capability key, e.g. performance');
     let config: unknown = {};
     if (p.flags.config !== undefined) {
       try { config = JSON.parse(String(p.flags.config)); } catch { throw new UsageError('Invalid JSON in --config.'); }
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new UsageError('--config must be a JSON object.');
     }
 
+    const yes = p.flags.yes === true;
+    const {ask} = ctx.deps;
+    if (!yes && !ask) throw new UsageError('stdin is not a terminal, so zof agents run cannot ask before starting. Pass --yes to start the run.');
+
+    const targetUrl = p.flags['target-url'];
+    const body = {repo, commit, capability, config, ...(targetUrl !== undefined ? {target_url: String(targetUrl)} : {})};
     const client = await ctx.authed();
-    if (!ctx.json) { banner(ctx.o, `Running Agent: ${key}`); info(ctx.o, 'Dispatching agent...'); }
-    const r = await client.post<{data?: Row} & Row>(`/api/ai-agents/${seg(key)}/operator-action`, {agent_key: key, action: 'run', target_url: p.flags['target-url'], target_repo: p.flags['target-repo'], config});
+    const origin = consoleOrigin(client.baseUrl);
+    // It spends credits: say so and ask, in zof run's words. No route prices a single agent run, so no amount is shown.
+    const say = (line: string) => (ctx.json ? ctx.o.err(line) : ctx.o.out(line));
+    say(`  Run ${stripControl(key)} on ${repo} @ ${commit.slice(0, 7)}`);
+    say('  Price: a price Zof will show you');
+    if (!yes) {
+      const reply = (await ask!('Continue? [y/N] '))?.trim().toLowerCase();
+      if (reply !== 'y' && reply !== 'yes') { say('  Not started.'); return 0; }
+    }
+
+    let r: Row;
+    try {
+      // One key per invocation: a retried request never starts (or bills) a second run.
+      r = await client.post<Row>(`/api/ai-agents/${seg(key)}/runs`, body, {headers: {'Idempotency-Key': ctx.deps.uuid()}});
+    } catch (error) {
+      // The address gate (a heavy agent): its codes, never its text.
+      if (error instanceof ApiError && error.statusCode === 403 && ADDRESS_GATE.has(error.serverCode ?? '')) {
+        throw new ApiError(403, error.errorCode, `This agent needs a confirmed address; start it in the console: ${origin}/ai-agents/${encodeURIComponent(key)}`, error.requestId, undefined, error.serverCode);
+      }
+      throw error;
+    }
     if (emit(ctx, r)) return 0;
-    const d = r.data || r;
-    success(ctx.o, 'Agent dispatched');
-    keyValue(ctx.o, [['Agent', key], ['Run ID', s(d.run_id) || '-'], ['Status', s(d.status) || 'dispatched']]);
-    if (d.run_id) info(ctx.o, `Stream progress: zof runs stream ${s(d.run_id)}`);
+    success(ctx.o, 'Run started');
+    keyValue(ctx.o, [['Agent', key], ['Run ID', s(r.run_id) || '-'], ['Repo', repo], ['Commit', commit.slice(0, 12)]]);
+    if (r.run_id) info(ctx.o, `Open in console: ${origin}/runs/${encodeURIComponent(s(r.run_id))}`);
     return 0;
   },
 };

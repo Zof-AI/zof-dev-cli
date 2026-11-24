@@ -17,7 +17,7 @@ function memoryStore(initial = null) {
   return {name: 'the test keychain', get: async () => value, set: async v => { value = v; }, delete: async () => { const had = value !== null; value = null; return had; }, peek: () => value};
 }
 
-async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore(), tty = false} = {}) {
+async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore(), tty = false, reply} = {}) {
   const home = mkdtempSync(join(tmpdir(), 'zof-console-home-'));
   for (const [p, c] of Object.entries(files)) { mkdirSync(join(home, '.zof'), {recursive: true}); writeFileSync(join(home, '.zof', p), c); }
   const requests = [];
@@ -28,6 +28,7 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
   const ticks = [];
   const exits = [];
   const interrupts = {on: 0, off: 0};
+  const asked = [];
   let t = 0;
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -48,6 +49,8 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
     store: async () => store,
     testRun: async (a, signIn) => { testRuns.push({argv: a, signIn: await signIn()}); return 0; },
   };
+  // A person at stdin: `reply` answers the question (null: no answer, e.g. Ctrl-D).
+  if (reply !== undefined) deps.ask = async q => { asked.push(q); return reply; };
   // A terminal: raw writes share the ordered log with line writes; the 100 ms redraw is captured, never run.
   if (tty) Object.assign(deps, {
     isTty: true, env: {...env, LANG: 'en_US.UTF-8'}, columns: () => 80,
@@ -58,7 +61,7 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
   try {
     const code = await consoleCommand(topic, argv, deps);
     const read = name => (existsSync(join(home, '.zof', name)) ? readFileSync(join(home, '.zof', name), 'utf8') : null);
-    return {code, requests, opened, written, testRuns, store, log: lines, ticks, exits, interrupts, raw: lines.filter(l => l.stream === 'raw').map(l => l.line).join(''), out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
+    return {code, requests, asked, opened, written, testRuns, store, log: lines, ticks, exits, interrupts, raw: lines.filter(l => l.stream === 'raw').map(l => l.line).join(''), out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
   } finally {
     rmSync(home, {recursive: true, force: true});
   }
@@ -490,6 +493,108 @@ describe('other console commands', () => {
     assert.equal(dl.code, 0);
     assert.deepEqual(JSON.parse(dl.written['out.json']), {id: 'a1', name: 'report'});
     assert.equal((await run('artifacts', ['list'])).code, 2);
+  });
+
+  describe('zof agents run', () => {
+    const SHA = 'a'.repeat(40);
+    const base = ['run', 'load-testing-agent', '--repo', 'acme/web', '--commit', SHA, '--capability', 'performance'];
+    const args = [...base, '--yes'];
+    const route = answer => ({routes: {'POST /api/ai-agents/load-testing-agent/runs': answer}});
+    const started = () => route(json(202, {run_id: 'run_1'}));
+
+    test('asks before spending, as zof run does: y starts it, anything else starts nothing', async () => {
+      const yes = await run('agents', base, {...started(), reply: 'y'});
+      assert.equal(yes.code, 0, yes.err);
+      assert.deepEqual(yes.asked, ['Continue? [y/N] ']);
+      assert.match(yes.out, /Price: a price Zof will show you/);
+      assert.equal(yes.requests.length, 1);
+      for (const reply of ['n', '', 'yes please', null]) {
+        const no = await run('agents', base, {...started(), reply});
+        assert.equal(no.code, 0, String(reply));
+        assert.equal(no.requests.length, 0, String(reply));
+        assert.match(no.out, /Not started/);
+      }
+    });
+
+    test('--yes skips the question, in a terminal too', async () => {
+      const r = await run('agents', args, {...started(), reply: 'n'});
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(r.asked, []);
+      assert.equal(r.requests.length, 1);
+    });
+
+    test('with nobody to ask (CI, a pipe) it refuses without --yes: exit 2, nothing sent, --json too', async () => {
+      for (const extra of [[], ['--json']]) {
+        const r = await run('agents', [...base, ...extra], started());
+        assert.equal(r.code, 2, extra.join(' '));
+        assert.equal(r.requests.length, 0);
+        assert.match(r.err, /--yes/);
+      }
+    });
+
+    test('a start the address gate refuses says to start it in the console (by the server code, not the text)', async () => {
+      for (const code of ['confirmation_required', 'address_not_verified']) {
+        const r = await run('agents', args, route(json(403, {code, error: 'whatever the text says'})));
+        assert.equal(r.code, 1, code);
+        assert.match(r.err, /This agent needs a confirmed address; start it in the console: http:\/\/localhost:3000\/ai-agents\/load-testing-agent/);
+        assert.doesNotMatch(r.err, /Permission denied/);
+      }
+      const other = await run('agents', args, route(json(403, {code: 'forbidden', error: 'needs a confirmed address'})));
+      assert.match(other.err, /Permission denied \(forbidden\)/);
+      assert.doesNotMatch(other.err, /confirmed address; start it/);
+    });
+
+    test('starts a run on POST /api/ai-agents/{key}/runs with the route\'s body and an Idempotency-Key', async () => {
+      const r = await run('agents', [...args, '--target-url', 'https://staging.acme.test', '--config', '{"depth":2}'], route(json(202, {run_id: 'run_1'})));
+      assert.equal(r.code, 0, r.err);
+      assert.equal(r.requests.length, 1);
+      assert.equal(r.requests[0].method, 'POST');
+      assert.equal(r.requests[0].path, '/api/ai-agents/load-testing-agent/runs');
+      assert.deepEqual(r.requests[0].body, {repo: 'acme/web', commit: SHA, capability: 'performance', config: {depth: 2}, target_url: 'https://staging.acme.test'});
+      assert.equal(r.requests[0].headers['Idempotency-Key'], 'uuid-1');
+      assert.match(r.out, /run_1/);
+      assert.equal(r.out.split('\n').find(l => l.trim().startsWith('Open in console:')), '  Open in console: http://localhost:3000/runs/run_1');
+      assert.ok(!r.requests.some(q => q.path.includes('operator-action')));
+    });
+
+    test('without --target-url or --config it sends an empty config and no target_url', async () => {
+      const r = await run('agents', args, route(json(202, {run_id: 'run_1'})));
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(r.requests[0].body, {repo: 'acme/web', commit: SHA, capability: 'performance', config: {}});
+    });
+
+    test('--json prints the console\'s answer as JSON, nothing else', async () => {
+      const r = await run('agents', [...args, '--json'], route(json(202, {run_id: 'run_1', advisory: true})));
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(JSON.parse(r.out), {run_id: 'run_1', advisory: true});
+    });
+
+    test('402 (credits) and 403 (permission) are shown plainly and exit 1', async () => {
+      const credits = await run('agents', args, route(json(402, {code: 'CREDITS_EXCEEDED', error: 'Execution not allowed'})));
+      assert.equal(credits.code, 1);
+      assert.match(credits.err, /Credits exceeded/);
+      const denied = await run('agents', args, route(json(403, {code: 'forbidden'})));
+      assert.equal(denied.code, 1);
+      assert.match(denied.err, /Permission denied/);
+    });
+
+    test('missing or malformed --repo, --commit, --capability or --config is a usage error that sends nothing', async () => {
+      const bad = [
+        ['run', 'k', '--commit', SHA, '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', SHA],
+        ['run', 'k', '--repo', 'https://github.com/acme/web', '--commit', SHA, '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', 'abc123', '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', SHA, '--capability', 'Not A Kind'],
+        [...args, '--config', '[1]'],
+        [...args, '--target-repo', 'https://github.com/acme/web'],
+      ];
+      for (const argv of bad) {
+        const r = await run('agents', argv);
+        assert.equal(r.code, 2, argv.join(' '));
+        assert.equal(r.requests.length, 0, argv.join(' '));
+      }
+    });
   });
 
   test('a 402 explains credits, exit 1; services ping fails 1 when the console is unreachable', async () => {

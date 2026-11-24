@@ -39,6 +39,8 @@ export class ApiError extends Error {
     public requestId?: string,
     /** The answer's Retry-After in seconds, when it gave a number. */
     public retryAfterS?: number,
+    /** The answer's own `code`, where errorCode is a fixed name (403: FORBIDDEN). Map behaviour on this, never on text. */
+    public serverCode?: string,
   ) {
     super(stripControl(message));
     this.name = 'ApiError';
@@ -137,7 +139,7 @@ export class ApiClient {
 
         if (response.status === 401) throw new ApiError(401, 'UNAUTHENTICATED', 'Session expired. Run `zof auth login` to re-authenticate.', requestId);
         if (response.status === 402) throw new ApiError(402, 'CREDITS_EXCEEDED', 'Credits exceeded. Upgrade your plan to continue.', requestId);
-        if (response.status === 403) throw new ApiError(403, 'FORBIDDEN', `Permission denied${errorBody.code ? ` (${errorBody.code})` : ''}. Check your role and org access.`, requestId);
+        if (response.status === 403) throw new ApiError(403, 'FORBIDDEN', `Permission denied${errorBody.code ? ` (${errorBody.code})` : ''}. Check your role and org access.`, requestId, undefined, errorBody.code);
         const retryAfter = /^\d{1,6}$/.test(response.headers.get('retry-after') ?? '') ? Number(response.headers.get('retry-after')) : undefined;
         throw new ApiError(response.status, errorBody.code || 'API_ERROR', msg, requestId, retryAfter);
       }
