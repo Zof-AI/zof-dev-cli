@@ -546,6 +546,14 @@ describe('progressText', () => {
 
   test('plain lines', () => {
     assert.equal(progressText(null, 0, asc, false), 'Queued | 0s')
+  })
+
+  test('a malformed lenses value never throws (it runs inside the spinner timer)', () => {
+    for (const lenses of ['abc', {length: 3}, [null, 7, {status: 'done'}], 42]) {
+      assert.doesNotThrow(() => progressText(reviewing(lenses), 1000, uni, true, 40), String(lenses))
+      assert.doesNotThrow(() => progressText(reviewing(lenses), 1000, uni, false), String(lenses))
+    }
+    assert.equal(progressText(reviewing('abc'), 0, asc, false), 'Reviewing | 0s')
     assert.equal(progressText({review: {review_id: 'r', status: 'queued'}, findings: []}, 3000, uni, false), 'Queued · 3s')
     assert.equal(progressText(reviewing(five), 72_000, uni, false), 'Reviewing · 2 of 5 lenses done · 1m 12s')
     assert.equal(progressText(reviewing(null), 72_000, uni, false), 'Reviewing · 1m 12s')

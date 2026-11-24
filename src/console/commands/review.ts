@@ -2,7 +2,7 @@ import {ApiError} from '../api.js';
 import {UsageError} from '../args.js';
 import {required, type Command} from '../context.js';
 import {glyphs, info, keyValue, paint, success} from '../output.js';
-import {progressText, renderNoAnswer, renderReview, reviewJson, type ReviewDetail} from '../review-render.js';
+import {doneLenses, progressText, renderNoAnswer, renderReview, reviewJson, str, type ReviewDetail} from '../review-render.js';
 import {reviewUrl, startReview, type StartedReview} from '../review-start.js';
 import {parsePrUrl} from '../review-url.js';
 import {isTerminal, reviewExitCode, waitForReview} from '../review-wait.js';
@@ -52,7 +52,7 @@ export const start: Command = {
     if (!json) {
       o.out('');
       // The full id up front, so a Ctrl-C or a killed CI job still leaves something to `zof review show`.
-      o.out(`  ${paint(o, 'bold', `Zof review ${g.dot} ${target.repo}#${target.pr}`)}  ${paint(o, 'dim', started.review_id)}`);
+      o.out(`  ${paint(o, 'bold', `Zof review ${g.dot} ${target.repo}#${target.pr}`)}  ${paint(o, 'dim', str(started.review_id))}`);
     }
 
     const path = `/api/reviews/${encodeURIComponent(started.review_id)}`;
@@ -65,7 +65,7 @@ export const start: Command = {
     const onDetail = (d: ReviewDetail) => {
       last = d;
       if (spin || isTerminal(d.review.status)) return;
-      const key = `${d.review.status}:${d.review.lenses?.filter(l => l.status === 'done').length ?? 0}`;
+      const key = `${d.review.status}:${doneLenses(d)}`;
       if (key === printed) return;
       printed = key;
       const line = `  ${progressText(d, now() - waitStart, o, false)}`;

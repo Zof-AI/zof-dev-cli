@@ -359,6 +359,21 @@ describe('zof review', () => {
     assert.deepEqual(r.exits, []);
   });
 
+  test('--wait never animates in a terminal with NO_COLOR, or with --json (stdout stays JSON)', async () => {
+    const env = {ZOF_TOKEN: 'zofcli_' + 'T'.repeat(24), ZOF_CONSOLE_URL: 'http://localhost:3000', NO_COLOR: '1'};
+    const plain = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {tty: true, env, routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
+    assert.equal(plain.code, 0, plain.err);
+    assert.equal(plain.raw, '');
+    assert.equal(plain.ticks.length, 0);
+    assert.ok(!plain.out.includes('\x1b') && !plain.out.includes('\r'));
+    const asJson = await run('review', ['https://github.com/acme/web/pull/42', '--wait', '--json'], {tty: true, routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
+    assert.equal(asJson.code, 0, asJson.err);
+    assert.equal(asJson.raw, '');
+    assert.equal(asJson.ticks.length, 0);
+    assert.equal(JSON.parse(asJson.out).review.status, 'done');
+    assert.match(asJson.err, /Reviewing/);
+  });
+
   test('--wait in a terminal shows the cursor again before an error is printed', async () => {
     const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {tty: true, routes: waitRoutes(json(404, {code: 'not_found'}))});
     assert.equal(r.code, 1);

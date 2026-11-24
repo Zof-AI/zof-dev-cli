@@ -30,7 +30,8 @@ export interface ReviewDetail {
 // Review text is model output about untrusted code: drop control characters (ESC included) so it cannot steer the
 // terminal; tabs and line breaks become spaces.
 const clean = (s: string): string => s.replace(/[\t\n\r]/g, ' ').replace(/[\u0000-\u001f\u007f-\u009f]/g, '')
-const str = (v: unknown): string => (v == null ? '' : clean(String(v)))
+/** A server value as one printable line: '' for null or undefined, control characters dropped. */
+export const str = (v: unknown): string => (v == null ? '' : clean(String(v)))
 
 const SEVERITIES = ['critical', 'high', 'medium', 'low', 'info']
 const rank = (s: string): number => {
@@ -142,17 +143,22 @@ export function renderReview(detail: ReviewDetail, url: string, o: Out, opts: {f
   return lines
 }
 
+// The server's shape is not trusted: a non-array (or non-object entries) must never throw inside the spinner's timer.
+const lensRuns = (d: ReviewDetail | null): Array<{profile?: unknown; status?: unknown} | null> => (Array.isArray(d?.review.lenses) ? d.review.lenses : [])
+export const doneLenses = (d: ReviewDetail | null): number => lensRuns(d).filter(l => l?.status === 'done').length
+
 /** The waiting text: `live` for the spinner line (lens marks, cut to `maxWidth`), else a plain progress line. */
 export function progressText(detail: ReviewDetail | null, ms: number, o: Out, live: boolean, maxWidth?: number): string {
   const g = glyphs(o)
   const label = !detail || detail.review.status === 'queued' ? 'Queued' : 'Reviewing'
-  const lenses = detail?.review.lenses?.length ? detail.review.lenses : null
+  const all = lensRuns(detail)
+  const lenses = all.length ? all : null
   if (!live) {
-    const done = lenses ? lenses.filter(l => l.status === 'done').length : 0
+    const done = doneLenses(detail)
     return `${label}${lenses ? ` ${g.dot} ${done} of ${lenses.length} lenses done` : ''} ${g.dot} ${elapsed(ms)}`
   }
-  const mark = (s: string) => (s === 'done' ? g.ok : s === 'failed' || s === 'incomplete' ? g.warn : g.more)
-  const text = `${label}${lenses ? `  ${lenses.map(l => `${str(l.profile)} ${mark(l.status)}`).join('  ')}` : ''}   ${elapsed(ms)}`
+  const mark = (s: unknown) => (s === 'done' ? g.ok : s === 'failed' || s === 'incomplete' ? g.warn : g.more)
+  const text = `${label}${lenses ? `  ${lenses.map(l => `${str(l?.profile)} ${mark(l?.status)}`).join('  ')}` : ''}   ${elapsed(ms)}`
   return maxWidth === undefined ? text : fit(text, maxWidth, g.more)
 }
 
