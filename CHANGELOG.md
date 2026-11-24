@@ -1,5 +1,15 @@
 # Changelog
 
+## 0.2.1
+
+A clearer terminal for `zof review` and `zof copilot ask`.
+
+- `zof review --wait` shows a live progress line while it waits: a spinner, the state, the lenses as they finish (when the console sends them) and the time so far, redrawn in place. The API is still asked every 5 seconds. Outside a terminal (CI, a pipe), with `NO_COLOR`, or with `--json` there is no animation: one plain line per change of state, on stderr with `--json`, so stdout stays one JSON document. The cursor is always restored, including on Ctrl-C and on errors.
+- `zof copilot ask` shows the same spinner while Copilot thinks.
+- `zof review --wait` and `zof review show` print a new result layout. It has a headline for the state, the PR and the number of files reviewed, and a summary wrapped to the terminal width and cut to five lines. Each finding has a severity badge, its location and a two-line description. A footer gives the review's short ID and its console link, printed once. No price is shown. `zof review show <id> --full` prints the whole summary and every description.
+- Colour only in a terminal, never with `NO_COLOR`. Without colour the badges read `[HIGH]`. When the locale is not UTF-8 (`LC_ALL`, `LC_CTYPE` or `LANG`, so also when none is set), the output falls back to ASCII.
+- Unchanged: `--json` output, exit codes (0 only for a done, complete review), and polling (5 s, `Retry-After`, timeouts). No new dependency.
+
 ## 0.2.0
 
 One `zof` for everything: the Zof console commands move here from the console repository's unpublished `@zof/cli` (apps/cli), so `npm i -g @zof-ai/cli` is the only CLI to install.

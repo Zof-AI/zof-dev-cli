@@ -1,6 +1,6 @@
 {
   "name": "@zof-ai/cli",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "The Zof command line: local change verification, evidence and policy tools, the release gate, and the Zof console (reviews, Copilot, runs)",
   "type": "module",
   "main": "./dist/index.js",
