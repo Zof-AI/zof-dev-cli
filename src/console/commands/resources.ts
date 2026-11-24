@@ -1,4 +1,4 @@
-import {consoleOrigin} from '../api.js';
+import {ApiError, consoleOrigin} from '../api.js';
 import {UsageError, type Parsed} from '../args.js';
 import {required, seg, type Command, type Ctx} from '../context.js';
 import {banner, formatDuration, formatJson, formatStatus, formatTimestamp, info, keyValue, success, table} from '../output.js';
@@ -76,6 +76,8 @@ const agentsHealth: Command = {
 const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
 const COMMIT = /^[0-9a-f]{40}$/i;
 const KIND = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+// dash's address gate (server/address-proof/gate.ts): a heavy agent's run needs a confirmed, proven address.
+const ADDRESS_GATE = new Set(['confirmation_required', 'address_not_verified']);
 const flag = (p: Parsed, name: string, test: RegExp, hint: string): string => {
   const v = p.flags[name];
   if (typeof v !== 'string' || !test.test(v)) throw new UsageError(`--${name} ${hint}.`);
@@ -83,10 +85,10 @@ const flag = (p: Parsed, name: string, test: RegExp, hint: string): string => {
 };
 
 const agentsRun: Command = {
-  usage: 'zof agents run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON] [--json]',
-  summary: 'Start a run of an agent on a commit (uses credits)',
+  usage: 'zof agents run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON] [--yes] [--json]',
+  summary: 'Start a run of an agent on a commit (uses credits; asks first, or pass --yes)',
   args: ['key'],
-  flags: {repo: {kind: 'string'}, commit: {kind: 'string'}, capability: {kind: 'string'}, 'target-url': {kind: 'string'}, config: {kind: 'string'}},
+  flags: {repo: {kind: 'string'}, commit: {kind: 'string'}, capability: {kind: 'string'}, 'target-url': {kind: 'string'}, config: {kind: 'string'}, yes: {kind: 'bool'}},
   async run(ctx, p) {
     const key = required(p, 0, 'agent key');
     const repo = flag(p, 'repo', REPO, 'must be OWNER/NAME, e.g. acme/web');
@@ -98,15 +100,38 @@ const agentsRun: Command = {
       if (!config || typeof config !== 'object' || Array.isArray(config)) throw new UsageError('--config must be a JSON object.');
     }
 
+    const yes = p.flags.yes === true;
+    const {ask} = ctx.deps;
+    if (!yes && !ask) throw new UsageError('stdin is not a terminal, so zof agents run cannot ask before starting. Pass --yes to start the run.');
+
     const targetUrl = p.flags['target-url'];
     const body = {repo, commit, capability, config, ...(targetUrl !== undefined ? {target_url: String(targetUrl)} : {})};
     const client = await ctx.authed();
-    // One key per invocation: a retried request never starts (or bills) a second run.
-    const r = await client.post<Row>(`/api/ai-agents/${seg(key)}/runs`, body, {headers: {'Idempotency-Key': ctx.deps.uuid()}});
+    const origin = consoleOrigin(client.baseUrl);
+    // It spends credits: say so and ask, in zof run's words. No route prices a single agent run, so no amount is shown.
+    const say = (line: string) => (ctx.json ? ctx.o.err(line) : ctx.o.out(line));
+    say(`  Run ${key} on ${repo} @ ${commit.slice(0, 7)}`);
+    say('  Price: a price Zof will show you');
+    if (!yes) {
+      const reply = (await ask!('Continue? [y/N] '))?.trim().toLowerCase();
+      if (reply !== 'y' && reply !== 'yes') { say('  Not started.'); return 0; }
+    }
+
+    let r: Row;
+    try {
+      // One key per invocation: a retried request never starts (or bills) a second run.
+      r = await client.post<Row>(`/api/ai-agents/${seg(key)}/runs`, body, {headers: {'Idempotency-Key': ctx.deps.uuid()}});
+    } catch (error) {
+      // The address gate (a heavy agent): its codes, never its text.
+      if (error instanceof ApiError && error.statusCode === 403 && ADDRESS_GATE.has(error.serverCode ?? '')) {
+        throw new ApiError(403, error.errorCode, `This agent needs a confirmed address; start it in the console: ${origin}/ai-agents/${encodeURIComponent(key)}`, error.requestId, undefined, error.serverCode);
+      }
+      throw error;
+    }
     if (emit(ctx, r)) return 0;
     success(ctx.o, 'Run started');
     keyValue(ctx.o, [['Agent', key], ['Run ID', s(r.run_id) || '-'], ['Repo', repo], ['Commit', commit.slice(0, 12)]]);
-    if (r.run_id) info(ctx.o, `Open in console: ${consoleOrigin(client.baseUrl)}/runs/${encodeURIComponent(s(r.run_id))}`);
+    if (r.run_id) info(ctx.o, `Open in console: ${origin}/runs/${encodeURIComponent(s(r.run_id))}`);
     return 0;
   },
 };

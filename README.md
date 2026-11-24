@@ -114,7 +114,7 @@ zof auth logout                                  # (or zof logout)
 | config | `list`, `get <key>`, `set <key> <value>`, `use-org <id>`, `use-env <id>` (keys: `console_url`, `org_id`, `env_id`, `output_format`, `color`) |
 | review | `<pr-url> [--wait [--timeout SECONDS]]` (default 900, at most 3600), `show <review-id> [--full]` |
 | copilot | `ask "<question>"`, `chat` (read-only from the CLI: answers and look-ups, never changes) |
-| agents | `list [--category] [--family] [--class]`, `show <key>`, `health <key>`, `run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON]` (starts a run; uses credits) |
+| agents | `list [--category] [--family] [--class]`, `show <key>`, `health <key>`, `run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON] [--yes]` (starts a run; uses credits; asks first) |
 | runs | `list [--status] [--limit] [--page]`, `show <id>`, `create --name NAME [--trigger]`, `create --repo OWNER/NAME (--pr N \| --commit SHA) --site/--api URL --category C [--yes]` (planned test run; `zof run` is an alias), `cancel <id>`, `stream <id>` |
 | artifacts | `list --run-id ID`, `show <id> --run-id ID`, `download <id> --run-id ID [-o FILE]` |
 | approvals | `list [--status]`, `show <id>`, `approve <id> [--reason]`, `reject <id> [--reason]` |

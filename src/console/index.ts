@@ -3,6 +3,7 @@ import {spawn} from 'node:child_process';
 import {randomUUID} from 'node:crypto';
 import {writeFileSync} from 'node:fs';
 import {homedir, hostname} from 'node:os';
+import * as readline from 'node:readline/promises';
 import {ApiError} from './api.js';
 import {parseArgs, UsageError} from './args.js';
 import {AUTH} from './commands/auth.js';
@@ -145,6 +146,10 @@ export function productionDeps(version: string): ConsoleDeps {
     raw: s => { process.stdout.write(s); },
     every: (fn, ms) => { const h = setInterval(fn, ms); h.unref(); return () => clearInterval(h); },
     exit: code => process.exit(code),
+    ...(process.stdin.isTTY === true ? {ask: async (question: string) => {
+      const rl = readline.createInterface({input: process.stdin, output: process.stderr});
+      try { return await rl.question(question); } catch { return null; } finally { rl.close(); }
+    }} : {}),
     onInterrupt: handler => { process.on('SIGINT', handler); return () => { process.removeListener('SIGINT', handler); }; },
   };
 }

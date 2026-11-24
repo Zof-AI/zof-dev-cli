@@ -17,7 +17,7 @@ function memoryStore(initial = null) {
   return {name: 'the test keychain', get: async () => value, set: async v => { value = v; }, delete: async () => { const had = value !== null; value = null; return had; }, peek: () => value};
 }
 
-async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore(), tty = false} = {}) {
+async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore(), tty = false, reply} = {}) {
   const home = mkdtempSync(join(tmpdir(), 'zof-console-home-'));
   for (const [p, c] of Object.entries(files)) { mkdirSync(join(home, '.zof'), {recursive: true}); writeFileSync(join(home, '.zof', p), c); }
   const requests = [];
@@ -28,6 +28,7 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
   const ticks = [];
   const exits = [];
   const interrupts = {on: 0, off: 0};
+  const asked = [];
   let t = 0;
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -48,6 +49,8 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
     store: async () => store,
     testRun: async (a, signIn) => { testRuns.push({argv: a, signIn: await signIn()}); return 0; },
   };
+  // A person at stdin: `reply` answers the question (null: no answer, e.g. Ctrl-D).
+  if (reply !== undefined) deps.ask = async q => { asked.push(q); return reply; };
   // A terminal: raw writes share the ordered log with line writes; the 100 ms redraw is captured, never run.
   if (tty) Object.assign(deps, {
     isTty: true, env: {...env, LANG: 'en_US.UTF-8'}, columns: () => 80,
@@ -58,7 +61,7 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
   try {
     const code = await consoleCommand(topic, argv, deps);
     const read = name => (existsSync(join(home, '.zof', name)) ? readFileSync(join(home, '.zof', name), 'utf8') : null);
-    return {code, requests, opened, written, testRuns, store, log: lines, ticks, exits, interrupts, raw: lines.filter(l => l.stream === 'raw').map(l => l.line).join(''), out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
+    return {code, requests, asked, opened, written, testRuns, store, log: lines, ticks, exits, interrupts, raw: lines.filter(l => l.stream === 'raw').map(l => l.line).join(''), out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
   } finally {
     rmSync(home, {recursive: true, force: true});
   }
@@ -494,8 +497,52 @@ describe('other console commands', () => {
 
   describe('zof agents run', () => {
     const SHA = 'a'.repeat(40);
-    const args = ['run', 'load-testing-agent', '--repo', 'acme/web', '--commit', SHA, '--capability', 'performance'];
+    const base = ['run', 'load-testing-agent', '--repo', 'acme/web', '--commit', SHA, '--capability', 'performance'];
+    const args = [...base, '--yes'];
     const route = answer => ({routes: {'POST /api/ai-agents/load-testing-agent/runs': answer}});
+    const started = () => route(json(202, {run_id: 'run_1'}));
+
+    test('asks before spending, as zof run does: y starts it, anything else starts nothing', async () => {
+      const yes = await run('agents', base, {...started(), reply: 'y'});
+      assert.equal(yes.code, 0, yes.err);
+      assert.deepEqual(yes.asked, ['Continue? [y/N] ']);
+      assert.match(yes.out, /Price: a price Zof will show you/);
+      assert.equal(yes.requests.length, 1);
+      for (const reply of ['n', '', 'yes please', null]) {
+        const no = await run('agents', base, {...started(), reply});
+        assert.equal(no.code, 0, String(reply));
+        assert.equal(no.requests.length, 0, String(reply));
+        assert.match(no.out, /Not started/);
+      }
+    });
+
+    test('--yes skips the question, in a terminal too', async () => {
+      const r = await run('agents', args, {...started(), reply: 'n'});
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(r.asked, []);
+      assert.equal(r.requests.length, 1);
+    });
+
+    test('with nobody to ask (CI, a pipe) it refuses without --yes: exit 2, nothing sent, --json too', async () => {
+      for (const extra of [[], ['--json']]) {
+        const r = await run('agents', [...base, ...extra], started());
+        assert.equal(r.code, 2, extra.join(' '));
+        assert.equal(r.requests.length, 0);
+        assert.match(r.err, /--yes/);
+      }
+    });
+
+    test('a start the address gate refuses says to start it in the console (by the server code, not the text)', async () => {
+      for (const code of ['confirmation_required', 'address_not_verified']) {
+        const r = await run('agents', args, route(json(403, {code, error: 'whatever the text says'})));
+        assert.equal(r.code, 1, code);
+        assert.match(r.err, /This agent needs a confirmed address; start it in the console: http:\/\/localhost:3000\/ai-agents\/load-testing-agent/);
+        assert.doesNotMatch(r.err, /Permission denied/);
+      }
+      const other = await run('agents', args, route(json(403, {code: 'forbidden', error: 'needs a confirmed address'})));
+      assert.match(other.err, /Permission denied \(forbidden\)/);
+      assert.doesNotMatch(other.err, /confirmed address; start it/);
+    });
 
     test('starts a run on POST /api/ai-agents/{key}/runs with the route\'s body and an Idempotency-Key', async () => {
       const r = await run('agents', [...args, '--target-url', 'https://staging.acme.test', '--config', '{"depth":2}'], route(json(202, {run_id: 'run_1'})));

@@ -35,6 +35,8 @@ export interface ConsoleDeps {
   raw?: (s: string) => void;
   every?: (fn: () => void, ms: number) => () => void;
   exit?: (code: number) => void;
+  /** Asks the person at stdin; absent when stdin is not a terminal (CI, a pipe), so nothing can be asked. */
+  ask?: (question: string) => Promise<string | null>;
 }
 
 export interface Ctx {
