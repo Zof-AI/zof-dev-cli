@@ -8,7 +8,7 @@ Run local static change checks, inspect dependencies, execute explicitly trusted
 Use Node.js 22 or 24 and npm. File-based operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. In a new project directory, install the version used by this guide:
 
 ```sh
-npm install --ignore-scripts --save-exact @zof-ai/cli@0.2.0
+npm install --ignore-scripts --save-exact @zof-ai/cli@0.2.1
 npx --no-install zof --help
 ```
 
@@ -37,7 +37,7 @@ Package: [@zof-ai/cli](https://www.npmjs.com/package/@zof-ai/cli). The source-ch
 Requires Node.js 22 or 24, npm, and Git. Filesystem operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. Clone this repository and explicitly prepare its reviewed release dependencies:
 
 ```sh
-git clone --branch v0.2.0 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
+git clone --branch v0.2.1 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
 cd zof-dev-cli
 node scripts/bootstrap.mjs --allow-network
 npm ci --ignore-scripts --prefer-offline
@@ -112,7 +112,7 @@ zof auth logout                                  # (or zof logout)
 |---|---|
 | auth | `login [--console-url URL] [--no-browser]`, `logout`, `whoami`, `tokens` (`zof login` / `zof logout` are aliases) |
 | config | `list`, `get <key>`, `set <key> <value>`, `use-org <id>`, `use-env <id>` (keys: `console_url`, `org_id`, `env_id`, `output_format`, `color`) |
-| review | `<pr-url> [--wait [--timeout SECONDS]]` (default 900, at most 3600), `show <review-id>` |
+| review | `<pr-url> [--wait [--timeout SECONDS]]` (default 900, at most 3600), `show <review-id> [--full]` |
 | copilot | `ask "<question>"`, `chat` (read-only from the CLI: answers and look-ups, never changes) |
 | agents | `list [--category] [--family] [--class]`, `show <key>`, `health <key>`, `run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON]` (starts a run; uses credits) |
 | runs | `list [--status] [--limit] [--page]`, `show <id>`, `create --name NAME [--trigger]`, `create --repo OWNER/NAME (--pr N \| --commit SHA) --site/--api URL --category C [--yes]` (planned test run; `zof run` is an alias), `cancel <id>`, `stream <id>` |

@@ -30,7 +30,8 @@ export * from './review-url.js';
 export * from './review-wait.js';
 export * from './run-create-body.js';
 export {readSse} from './sse.js';
-export {formatDuration, formatJson} from './output.js';
+export {formatDuration, formatJson, utf8Locale, glyphs, wrap, fit, elapsed, visible, spinner} from './output.js';
+export type {Spinner, TtyDeps} from './output.js';
 export type {ConsoleDeps} from './context.js';
 
 const TOPICS: Record<string, {summary: string; commands: Record<string, Command>}> = {
@@ -140,6 +141,10 @@ export function productionDeps(version: string): ConsoleDeps {
     isTty: Boolean(process.stdout.isTTY), openUrl,
     writeFile: (path, content) => writeFileSync(path, content),
     input: process.stdin, output: process.stdout,
+    columns: () => process.stdout.columns,
+    raw: s => { process.stdout.write(s); },
+    every: (fn, ms) => { const h = setInterval(fn, ms); h.unref(); return () => clearInterval(h); },
+    exit: code => process.exit(code),
     onInterrupt: handler => { process.on('SIGINT', handler); return () => { process.removeListener('SIGINT', handler); }; },
   };
 }

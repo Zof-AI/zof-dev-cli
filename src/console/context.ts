@@ -3,7 +3,8 @@ import {UsageError, type FlagSpec, type Parsed} from './args.js';
 import {loadConfig, orgId, type Env} from './config.js';
 import {findSignIn, type Found} from './signin.js';
 import type {SecretStore} from '../run/keychain.js';
-import type {Out} from './output.js';
+import type {Out, Spinner} from './output.js';
+import {spinner, utf8Locale} from './output.js';
 
 /** Everything a console command touches, injected so tests run without a network, a home directory or a clock. */
 export interface ConsoleDeps {
@@ -29,6 +30,11 @@ export interface ConsoleDeps {
   testRun: (argv: string[], signIn: () => Promise<Found | null>) => Promise<number>;
   /** Registers a Ctrl+C handler; returns its removal. */
   onInterrupt: (handler: () => void) => () => void;
+  /** Terminal size and raw writes for the spinner; absent in tests. */
+  columns?: () => number | undefined;
+  raw?: (s: string) => void;
+  every?: (fn: () => void, ms: number) => () => void;
+  exit?: (code: number) => void;
 }
 
 export interface Ctx {
@@ -41,6 +47,8 @@ export interface Ctx {
   authed: () => Promise<ApiClient>;
   signIn: () => Promise<Found | null>;
   consoleUrl: () => string;
+  /** A live status line, or null when the terminal cannot animate. */
+  spin: (text: () => string) => Spinner | null;
 }
 
 export interface Command {
@@ -55,7 +63,7 @@ export class NotSignedIn extends Error {}
 
 export function makeCtx(deps: ConsoleDeps, json: boolean): Ctx {
   const config = () => loadConfig(deps.env, deps.home);
-  const o: Out = {out: line => deps.write('out', line), err: line => deps.write('err', line), color: deps.isTty && config().color && !json};
+  const o: Out = {out: line => deps.write('out', line), err: line => deps.write('err', line), color: deps.isTty && config().color && !json, unicode: utf8Locale(deps.env), width: Math.max(60, deps.columns?.() ?? 80)};
   const make = (token: string | null) => new ApiClient({baseUrl: config().console_url, token, orgId: orgId(deps.env, deps.home), version: deps.version, fetch: deps.fetch});
   let cached: Promise<Found | null> | undefined;
   const signIn = () => (cached ??= findSignIn(deps));
@@ -63,6 +71,10 @@ export function makeCtx(deps: ConsoleDeps, json: boolean): Ctx {
     deps, o, json, signIn,
     client: () => make(null),
     consoleUrl: () => config().console_url,
+    spin: text => {
+      const {raw, every, exit} = deps;
+      return o.color && raw && every && exit && (deps.columns?.() ?? 80) >= 40 ? spinner(o, {raw, every, exit, onInterrupt: deps.onInterrupt}, text) : null;
+    },
     authed: async () => {
       const s = await signIn();
       if (!s) throw new NotSignedIn('Not authenticated. Run `zof auth login` first, or set ZOF_TOKEN.');
