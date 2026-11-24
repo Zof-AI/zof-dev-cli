@@ -53,7 +53,7 @@
   },
   "devDependencies": {
     "typescript": "5.9.3",
-    "@types/node": "22.19.11"
+    "@types/node": "26.6.6"
   },
   "dependencies": {
     "@napi-rs/keyring": "2.1.2",
