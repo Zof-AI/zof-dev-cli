@@ -401,7 +401,7 @@ describe('renderReview', () => {
     for (const width of [60, 80, 120]) {
       for (const full of [false, true]) {
         const lines = renderReview(d, SAMPLE_URL, out({width}), {full})
-        assert.ok(lines.at(-1).includes(SAMPLE_URL))
+        assert.equal(strip(lines.at(-1)).split(' ').at(-1), SAMPLE_URL)
         for (const l of lines.slice(0, -1)) assert.ok(visible(l) <= width, `${width}: ${strip(l)}`)
       }
     }
