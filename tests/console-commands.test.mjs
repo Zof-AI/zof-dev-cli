@@ -359,6 +359,64 @@ describe('other console commands', () => {
     assert.equal((await run('artifacts', ['list'])).code, 2);
   });
 
+  describe('zof agents run', () => {
+    const SHA = 'a'.repeat(40);
+    const args = ['run', 'load-testing-agent', '--repo', 'acme/web', '--commit', SHA, '--capability', 'performance'];
+    const route = answer => ({routes: {'POST /api/ai-agents/load-testing-agent/runs': answer}});
+
+    test('starts a run on POST /api/ai-agents/{key}/runs with the route\'s body and an Idempotency-Key', async () => {
+      const r = await run('agents', [...args, '--target-url', 'https://staging.acme.test', '--config', '{"depth":2}'], route(json(202, {run_id: 'run_1'})));
+      assert.equal(r.code, 0, r.err);
+      assert.equal(r.requests.length, 1);
+      assert.equal(r.requests[0].method, 'POST');
+      assert.equal(r.requests[0].path, '/api/ai-agents/load-testing-agent/runs');
+      assert.deepEqual(r.requests[0].body, {repo: 'acme/web', commit: SHA, capability: 'performance', config: {depth: 2}, target_url: 'https://staging.acme.test'});
+      assert.equal(r.requests[0].headers['Idempotency-Key'], 'uuid-1');
+      assert.match(r.out, /run_1/);
+      assert.ok(r.out.includes('http://localhost:3000/runs/run_1'), r.out);
+      assert.ok(!r.requests.some(q => q.path.includes('operator-action')));
+    });
+
+    test('without --target-url or --config it sends an empty config and no target_url', async () => {
+      const r = await run('agents', args, route(json(202, {run_id: 'run_1'})));
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(r.requests[0].body, {repo: 'acme/web', commit: SHA, capability: 'performance', config: {}});
+    });
+
+    test('--json prints the console\'s answer as JSON, nothing else', async () => {
+      const r = await run('agents', [...args, '--json'], route(json(202, {run_id: 'run_1', advisory: true})));
+      assert.equal(r.code, 0, r.err);
+      assert.deepEqual(JSON.parse(r.out), {run_id: 'run_1', advisory: true});
+    });
+
+    test('402 (credits) and 403 (permission) are shown plainly and exit 1', async () => {
+      const credits = await run('agents', args, route(json(402, {code: 'CREDITS_EXCEEDED', error: 'Execution not allowed'})));
+      assert.equal(credits.code, 1);
+      assert.match(credits.err, /Credits exceeded/);
+      const denied = await run('agents', args, route(json(403, {code: 'forbidden'})));
+      assert.equal(denied.code, 1);
+      assert.match(denied.err, /Permission denied/);
+    });
+
+    test('missing or malformed --repo, --commit, --capability or --config is a usage error that sends nothing', async () => {
+      const bad = [
+        ['run', 'k', '--commit', SHA, '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', SHA],
+        ['run', 'k', '--repo', 'https://github.com/acme/web', '--commit', SHA, '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', 'abc123', '--capability', 'performance'],
+        ['run', 'k', '--repo', 'acme/web', '--commit', SHA, '--capability', 'Not A Kind'],
+        [...args, '--config', '[1]'],
+        [...args, '--target-repo', 'https://github.com/acme/web'],
+      ];
+      for (const argv of bad) {
+        const r = await run('agents', argv);
+        assert.equal(r.code, 2, argv.join(' '));
+        assert.equal(r.requests.length, 0, argv.join(' '));
+      }
+    });
+  });
+
   test('a 402 explains credits, exit 1; services ping fails 1 when the console is unreachable', async () => {
     const r = await run('runs', ['list'], {routes: {'GET /api/runs': json(402, {})}});
     assert.equal(r.code, 1);

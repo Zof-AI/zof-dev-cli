@@ -1,4 +1,5 @@
-import {UsageError} from '../args.js';
+import {consoleOrigin} from '../api.js';
+import {UsageError, type Parsed} from '../args.js';
 import {required, seg, type Command, type Ctx} from '../context.js';
 import {banner, formatDuration, formatJson, formatStatus, formatTimestamp, info, keyValue, success, table} from '../output.js';
 import {buildRunCreateBody, RUN_CREATE_TRIGGERS} from '../run-create-body.js';
@@ -71,26 +72,41 @@ const agentsHealth: Command = {
   },
 };
 
+// The console's start-run validator (POST /api/ai-agents/{key}/runs): checked here first so a typo is a usage error.
+const REPO = /^[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+$/;
+const COMMIT = /^[0-9a-f]{40}$/i;
+const KIND = /^[a-z0-9][a-z0-9._-]{0,63}$/;
+const flag = (p: Parsed, name: string, test: RegExp, hint: string): string => {
+  const v = p.flags[name];
+  if (typeof v !== 'string' || !test.test(v)) throw new UsageError(`--${name} ${hint}.`);
+  return v;
+};
+
 const agentsRun: Command = {
-  usage: 'zof agents run <key> [--target-url URL] [--target-repo URL] [--config JSON] [--json]',
-  summary: 'Dispatch an agent',
+  usage: 'zof agents run <key> --repo OWNER/NAME --commit SHA --capability KIND [--target-url URL] [--config JSON] [--json]',
+  summary: 'Start a run of an agent on a commit (uses credits)',
   args: ['key'],
-  flags: {'target-url': {kind: 'string'}, 'target-repo': {kind: 'string'}, config: {kind: 'string'}, wait: {kind: 'bool'}},
+  flags: {repo: {kind: 'string'}, commit: {kind: 'string'}, capability: {kind: 'string'}, 'target-url': {kind: 'string'}, config: {kind: 'string'}},
   async run(ctx, p) {
     const key = required(p, 0, 'agent key');
+    const repo = flag(p, 'repo', REPO, 'must be OWNER/NAME, e.g. acme/web');
+    const commit = flag(p, 'commit', COMMIT, 'must be a full 40-character commit SHA');
+    const capability = flag(p, 'capability', KIND, 'must be a capability key, e.g. performance');
     let config: unknown = {};
     if (p.flags.config !== undefined) {
       try { config = JSON.parse(String(p.flags.config)); } catch { throw new UsageError('Invalid JSON in --config.'); }
+      if (!config || typeof config !== 'object' || Array.isArray(config)) throw new UsageError('--config must be a JSON object.');
     }
 
+    const targetUrl = p.flags['target-url'];
+    const body = {repo, commit, capability, config, ...(targetUrl !== undefined ? {target_url: String(targetUrl)} : {})};
     const client = await ctx.authed();
-    if (!ctx.json) { banner(ctx.o, `Running Agent: ${key}`); info(ctx.o, 'Dispatching agent...'); }
-    const r = await client.post<{data?: Row} & Row>(`/api/ai-agents/${seg(key)}/operator-action`, {agent_key: key, action: 'run', target_url: p.flags['target-url'], target_repo: p.flags['target-repo'], config});
+    // One key per invocation: a retried request never starts (or bills) a second run.
+    const r = await client.post<Row>(`/api/ai-agents/${seg(key)}/runs`, body, {headers: {'Idempotency-Key': ctx.deps.uuid()}});
     if (emit(ctx, r)) return 0;
-    const d = r.data || r;
-    success(ctx.o, 'Agent dispatched');
-    keyValue(ctx.o, [['Agent', key], ['Run ID', s(d.run_id) || '-'], ['Status', s(d.status) || 'dispatched']]);
-    if (d.run_id) info(ctx.o, `Stream progress: zof runs stream ${s(d.run_id)}`);
+    success(ctx.o, 'Run started');
+    keyValue(ctx.o, [['Agent', key], ['Run ID', s(r.run_id) || '-'], ['Repo', repo], ['Commit', commit.slice(0, 12)]]);
+    if (r.run_id) info(ctx.o, `Open in console: ${consoleOrigin(client.baseUrl)}/runs/${encodeURIComponent(s(r.run_id))}`);
     return 0;
   },
 };
