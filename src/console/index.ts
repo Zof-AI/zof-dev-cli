@@ -148,7 +148,10 @@ export function productionDeps(version: string): ConsoleDeps {
     exit: code => process.exit(code),
     ...(process.stdin.isTTY === true ? {ask: async (question: string) => {
       const rl = readline.createInterface({input: process.stdin, output: process.stderr});
-      try { return await rl.question(question); } catch { return null; } finally { rl.close(); }
+      // Ctrl-C at the question is a no: the abort rejects the pending question, read as no answer.
+      const stop = new AbortController();
+      rl.once('SIGINT', () => stop.abort());
+      try { return await rl.question(question, {signal: stop.signal}); } catch { return null; } finally { rl.close(); }
     }} : {}),
     onInterrupt: handler => { process.on('SIGINT', handler); return () => { process.removeListener('SIGINT', handler); }; },
   };

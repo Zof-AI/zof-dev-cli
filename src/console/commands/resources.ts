@@ -1,4 +1,4 @@
-import {ApiError, consoleOrigin} from '../api.js';
+import {ApiError, consoleOrigin, stripControl} from '../api.js';
 import {UsageError, type Parsed} from '../args.js';
 import {required, seg, type Command, type Ctx} from '../context.js';
 import {banner, formatDuration, formatJson, formatStatus, formatTimestamp, info, keyValue, success, table} from '../output.js';
@@ -110,7 +110,7 @@ const agentsRun: Command = {
     const origin = consoleOrigin(client.baseUrl);
     // It spends credits: say so and ask, in zof run's words. No route prices a single agent run, so no amount is shown.
     const say = (line: string) => (ctx.json ? ctx.o.err(line) : ctx.o.out(line));
-    say(`  Run ${key} on ${repo} @ ${commit.slice(0, 7)}`);
+    say(`  Run ${stripControl(key)} on ${repo} @ ${commit.slice(0, 7)}`);
     say('  Price: a price Zof will show you');
     if (!yes) {
       const reply = (await ask!('Continue? [y/N] '))?.trim().toLowerCase();
