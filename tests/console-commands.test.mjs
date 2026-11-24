@@ -373,7 +373,7 @@ describe('other console commands', () => {
       assert.deepEqual(r.requests[0].body, {repo: 'acme/web', commit: SHA, capability: 'performance', config: {depth: 2}, target_url: 'https://staging.acme.test'});
       assert.equal(r.requests[0].headers['Idempotency-Key'], 'uuid-1');
       assert.match(r.out, /run_1/);
-      assert.ok(r.out.includes('http://localhost:3000/runs/run_1'), r.out);
+      assert.equal(r.out.split('\n').find(l => l.trim().startsWith('Open in console:')), '  Open in console: http://localhost:3000/runs/run_1');
       assert.ok(!r.requests.some(q => q.path.includes('operator-action')));
     });
 
