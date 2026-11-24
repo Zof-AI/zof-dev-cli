@@ -5,6 +5,7 @@ import {
   cleanText, eventLine, jsonEvents, readEvents, turnOutcome, askTurn, conversationTitle, errorHint, startConversation,
   renderReview, renderNoAnswer, reviewJson, startReview, reviewUrl, parsePrUrl, PR_URL_HELP, waitForReview, reviewExitCode,
   buildRunCreateBody, RUN_CREATE_TRIGGERS, readSse, formatJson, formatDuration,
+  utf8Locale, glyphs, wrap, fit, elapsed, spinner,
 } from '../dist/console/index.js';
 
 // Synthetic values only; no real network, tokens or customers.
@@ -486,5 +487,90 @@ describe('readSse (events stream)', () => {
     const seen = [];
     await readSse(body([': heartbeat 1\n\n', 'id: evt_1\ndata: {"type":"connected"}\n\n', 'id: evt_2\ndata: {"type":"run.started","entityId":"run_1"}\n\ndata: nope\n\n', 'data: {"type":"agent.dispatched","id":"own"}\n\n']), e => seen.push(e));
     assert.deepEqual(seen.map(e => [e.type, e.id]), [['run.started', 'evt_2'], ['agent.dispatched', 'own']]);
+  });
+});
+
+describe('terminal output', () => {
+  const ttyDeps = () => {
+    const t = {writes: [], cancels: 0, exits: [], tick: null, sigint: null};
+    t.deps = {
+      raw: s => t.writes.push(s),
+      every: fn => { t.tick = fn; return () => { t.cancels++; }; },
+      onInterrupt: h => { t.sigint = h; return () => { t.sigint = null; }; },
+      exit: c => t.exits.push(c),
+    };
+    return t;
+  };
+  const uni = {out() {}, err() {}, color: true, unicode: true, width: 80};
+  const asc = {...uni, unicode: false};
+
+  test('utf8Locale picks the first non-empty of LC_ALL, LC_CTYPE, LANG', () => {
+    assert.equal(utf8Locale({LANG: 'en_US.UTF-8'}), true);
+    assert.equal(utf8Locale({LC_ALL: 'C', LANG: 'en_US.UTF-8'}), false);
+    assert.equal(utf8Locale({LANG: 'C.utf8'}), true);
+    assert.equal(utf8Locale({}), false);
+  });
+
+  test('glyphs fall back to ASCII', () => {
+    assert.equal(glyphs(asc).ok, 'ok');
+    assert.equal(glyphs(asc).dot, '|');
+    assert.equal(glyphs(asc).frames.join(''), '-\\|/');
+    assert.equal(glyphs(uni).ok, '✔');
+    assert.equal(glyphs(uni).rule, '─');
+  });
+
+  test('wrap is greedy, hard-splits long words and counts code points', () => {
+    assert.deepEqual(wrap('a b  c', 3), ['a b', 'c']);
+    assert.deepEqual(wrap('x'.repeat(7), 3), ['xxx', 'xxx', 'x']);
+    assert.deepEqual(wrap('', 5), []);
+    assert.deepEqual(wrap('abc', 0), ['a', 'b', 'c']);
+    const long = 'the quick brown fox jumps over the lazy dog '.repeat(10);
+    for (const l of wrap(long, 60)) assert.ok(l.length <= 60);
+    for (const l of wrap('ab😀cd', 3)) assert.ok([...l].length <= 3);
+    assert.ok(wrap('ab😀cd', 3).some(l => l.includes('😀')));
+  });
+
+  test('fit cuts with the marker', () => {
+    assert.equal(fit('abcdef', 4, '…'), 'abc…');
+    assert.equal(fit('ab', 4, '…'), 'ab');
+  });
+
+  test('elapsed shows whole seconds', () => {
+    assert.equal(elapsed(0), '0s');
+    assert.equal(elapsed(54_900), '54s');
+    assert.equal(elapsed(72_000), '1m 12s');
+    assert.equal(elapsed(-5000), '0s');
+    assert.equal(elapsed(3_660_000), '61m 0s');
+  });
+
+  test('spinner animates, prints above itself and stops once', () => {
+    const t = ttyDeps();
+    const s = spinner(uni, t.deps, () => 'working');
+    assert.ok(t.writes[0].includes('\x1b[?25l'));
+    t.tick(); const a = t.writes.at(-1);
+    t.tick(); const b = t.writes.at(-1);
+    assert.ok(a.startsWith('\r\x1b[2K') && a.includes('working'));
+    assert.notEqual(a, b);
+    s.print('hi');
+    const joined = t.writes.join('');
+    assert.ok(joined.includes('\r\x1b[2Khi\n'));
+    s.stop(); s.stop();
+    assert.equal(t.writes.join('').split('\x1b[?25h').length - 1, 1);
+    assert.equal(t.cancels, 1);
+    assert.equal(t.sigint, null);
+  });
+
+  test('spinner restores the cursor and exits 130 on Ctrl+C', () => {
+    const t = ttyDeps();
+    spinner(uni, t.deps, () => 'x');
+    t.sigint();
+    assert.ok(t.writes.at(-1).includes('\x1b[?25h'));
+    assert.deepEqual(t.exits, [130]);
+  });
+
+  test('ascii spinner uses only ASCII frames', () => {
+    const t = ttyDeps();
+    spinner(asc, t.deps, () => 'x');
+    for (let i = 0; i < 5; i++) { t.tick(); assert.match(t.writes.at(-1), /^\r\x1b\[2K  [-\\|/] x$/); }
   });
 });
