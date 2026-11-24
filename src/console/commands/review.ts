@@ -1,11 +1,11 @@
 import {ApiError} from '../api.js';
 import {UsageError} from '../args.js';
 import {required, type Command} from '../context.js';
-import {info, keyValue, success, warn} from '../output.js';
-import {renderNoAnswer, renderReview, reviewJson, type ReviewDetail} from '../review-render.js';
+import {glyphs, info, keyValue, paint, success} from '../output.js';
+import {progressText, renderNoAnswer, renderReview, reviewJson, type ReviewDetail} from '../review-render.js';
 import {reviewUrl, startReview, type StartedReview} from '../review-start.js';
 import {parsePrUrl} from '../review-url.js';
-import {reviewExitCode, waitForReview} from '../review-wait.js';
+import {isTerminal, reviewExitCode, waitForReview} from '../review-wait.js';
 
 export const DEFAULT_TIMEOUT_S = 900;
 export const MAX_TIMEOUT_S = 3600;
@@ -48,25 +48,48 @@ export const start: Command = {
       return 0;
     }
 
+    const g = glyphs(o);
     if (!json) {
-      success(o, `Review started: ${started.review_id}`);
-      info(o, `Open in console: ${url}`);
-      info(o, `Waiting for the review (up to ${timeoutS}s)...`);
+      o.out('');
+      o.out(`  ${paint(o, 'bold', `Zof review ${g.dot} ${target.repo}#${target.pr}`)}`);
     }
 
     const path = `/api/reviews/${encodeURIComponent(started.review_id)}`;
-    const waitStart = ctx.deps.now();
-    const {detail, timedOut} = await waitForReview(
-      remainingMs => client.get<ReviewDetail>(path, {timeout: Math.max(1, Math.min(30_000, remainingMs))}),
-      {timeoutMs: timeoutS * 1000, now: ctx.deps.now, sleep: ctx.deps.sleep},
-    );
+    const {now} = ctx.deps;
+    const waitStart = now();
+    let last: ReviewDetail | null = null;
+    let printed: string | null = null;
+    const spin = ctx.spin(() => progressText(last, now() - waitStart, o, true, (ctx.deps.columns?.() ?? 80) - 5));
+    // Without a live line, one plain line per change of state (status, lenses done); the result follows a terminal one.
+    const onDetail = (d: ReviewDetail) => {
+      last = d;
+      if (spin || isTerminal(d.review.status)) return;
+      const key = `${d.review.status}:${d.review.lenses?.filter(l => l.status === 'done').length ?? 0}`;
+      if (key === printed) return;
+      printed = key;
+      const line = `  ${progressText(d, now() - waitStart, o, false)}`;
+      if (json) o.err(line);
+      else o.out(line);
+    };
+    let result: Awaited<ReturnType<typeof waitForReview>>;
+    try {
+      result = await waitForReview(
+        remainingMs => client.get<ReviewDetail>(path, {timeout: Math.max(1, Math.min(30_000, remainingMs))}),
+        {timeoutMs: timeoutS * 1000, now, sleep: ctx.deps.sleep, onDetail},
+      );
+    } finally {
+      spin?.stop();
+    }
+
+    const {detail, timedOut} = result;
     if (json) {
       o.out(reviewJson(detail ? {...detail, timed_out: timedOut} : {review_id: started.review_id, url, timed_out: true}));
     } else {
       o.out('');
-      if (detail) for (const line of renderReview(detail, url, o, {waitedMs: ctx.deps.now() - waitStart})) o.out(line);
-      else for (const line of renderNoAnswer(started.review_id, url)) o.out(`  ${line}`);
-      if (timedOut) warn(o, `Timed out after ${timeoutS}s; the review is still running. See it later: zof review show ${started.review_id}`);
+      if (detail) {
+        for (const line of renderReview(detail, url, o, {waitedMs: now() - waitStart})) o.out(line);
+        if (timedOut) o.out(`  ${paint(o, 'dim', `See it later: zof review show ${started.review_id}`)}`);
+      } else for (const line of renderNoAnswer(started.review_id, url)) o.out(`  ${line}`);
     }
 
     return reviewExitCode(detail, timedOut);
@@ -74,16 +97,17 @@ export const start: Command = {
 };
 
 export const show: Command = {
-  usage: 'zof review show <review-id> [--json]',
-  summary: 'Show a Zof code review and its findings (exits 1 unless it is done and complete)',
+  usage: 'zof review show <review-id> [--full] [--json]',
+  summary: 'Show a Zof code review and its findings; --full prints the whole summary and every description (exits 1 unless it is done and complete)',
   args: ['review-id'],
+  flags: {full: {kind: 'bool'}},
   async run(ctx, p) {
     const id = required(p, 0, 'review ID');
     if (!REVIEW_ID.test(id)) throw new UsageError(`Not a review ID: ${id.slice(0, 40)}. Expected rev_ followed by 26 letters or digits.`);
     const client = await ctx.authed();
     const detail = await client.get<ReviewDetail>(`/api/reviews/${id}`);
     if (ctx.json) ctx.o.out(reviewJson(detail));
-    else for (const line of renderReview(detail, reviewUrl(client.baseUrl, id), ctx.o, {now: ctx.deps.now()})) ctx.o.out(line);
+    else for (const line of renderReview(detail, reviewUrl(client.baseUrl, id), ctx.o, {full: p.flags.full === true, now: ctx.deps.now()})) ctx.o.out(line);
     // A queued or running review is not done: 1.
     return reviewExitCode(detail, false);
   },

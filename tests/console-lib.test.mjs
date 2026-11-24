@@ -670,6 +670,14 @@ describe('waitForReview', () => {
     assert.deepEqual(c2.sleeps, [30_000]);
   });
 
+  test('onDetail sees every answer it got, the terminal one included', async () => {
+    const c = clock();
+    const answers = [d('reviewing'), d('done', true)];
+    const seen = [];
+    await waitForReview(async () => answers.shift(), {timeoutMs: 60_000, now: c.now, sleep: c.sleep, onDetail: x => seen.push(x.review.status)});
+    assert.deepEqual(seen, ['reviewing', 'done']);
+  });
+
   test('stops at once on an unreadable answer or a 4xx', async () => {
     for (const err of [new ApiError(0, 'UNKNOWN_ERROR', 'Unexpected token <'), new ApiError(404, 'not_found', 'not_found')]) {
       let calls = 0;

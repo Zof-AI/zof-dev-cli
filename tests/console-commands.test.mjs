@@ -17,7 +17,7 @@ function memoryStore(initial = null) {
   return {name: 'the test keychain', get: async () => value, set: async v => { value = v; }, delete: async () => { const had = value !== null; value = null; return had; }, peek: () => value};
 }
 
-async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore()} = {}) {
+async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore(), tty = false} = {}) {
   const home = mkdtempSync(join(tmpdir(), 'zof-console-home-'));
   for (const [p, c] of Object.entries(files)) { mkdirSync(join(home, '.zof'), {recursive: true}); writeFileSync(join(home, '.zof', p), c); }
   const requests = [];
@@ -25,6 +25,9 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
   const opened = [];
   const written = {};
   const testRuns = [];
+  const ticks = [];
+  const exits = [];
+  const interrupts = {on: 0, off: 0};
   let t = 0;
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -41,14 +44,21 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
     sleep: async ms => { t += ms; }, now: () => t, uuid: () => 'uuid-1', hostname: () => 'host-1', platform: 'linux', isTty: false,
     openUrl: async url => { opened.push(url); return true; },
     writeFile: (p, c) => { written[p] = c; },
-    input: Readable.from([input]), onInterrupt: () => () => {},
+    input: Readable.from([input]), onInterrupt: () => { interrupts.on++; return () => { interrupts.off++; }; },
     store: async () => store,
     testRun: async (a, signIn) => { testRuns.push({argv: a, signIn: await signIn()}); return 0; },
   };
+  // A terminal: raw writes share the ordered log with line writes; the 100 ms redraw is captured, never run.
+  if (tty) Object.assign(deps, {
+    isTty: true, env: {...env, LANG: 'en_US.UTF-8'}, columns: () => 80,
+    raw: s => lines.push({stream: 'raw', line: s}),
+    every: fn => { ticks.push(fn); return () => {}; },
+    exit: code => { exits.push(code); },
+  });
   try {
     const code = await consoleCommand(topic, argv, deps);
     const read = name => (existsSync(join(home, '.zof', name)) ? readFileSync(join(home, '.zof', name), 'utf8') : null);
-    return {code, requests, opened, written, testRuns, store, out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
+    return {code, requests, opened, written, testRuns, store, log: lines, ticks, exits, interrupts, raw: lines.filter(l => l.stream === 'raw').map(l => l.line).join(''), out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
   } finally {
     rmSync(home, {recursive: true, force: true});
   }
@@ -295,6 +305,92 @@ describe('zof review', () => {
     const running = await run('review', ['show', REV], {routes: {[`GET /api/reviews/${REV}`]: detail('reviewing', null)}});
     assert.equal(running.code, 1);
   });
+
+  const URL_ = `http://localhost:3000/code-review/${REV}`;
+  const count = (s, needle) => s.split(needle).length - 1;
+  const waitRoutes = answers => ({'GET /api/run/refs': ref, 'POST /api/reviews': started, [`GET /api/reviews/${REV}`]: answers});
+
+  test('--wait without a terminal prints one plain progress line per change, then the result with the URL once', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
+    assert.equal(r.code, 0, r.err);
+    assert.ok(r.out.includes('Zof review | acme/web#42'), r.out);
+    assert.equal(r.out.split('\n').filter(l => /Reviewing \| 0s/.test(l)).length, 1, r.out);
+    assert.ok(!/Reviewing \| 5s/.test(r.out), 'the terminal poll prints no progress line');
+    assert.ok(!r.out.includes('\r') && !r.out.includes('\x1b') && r.raw === '');
+    assert.equal(count(r.out + r.err, URL_), 1);
+    assert.match(r.out, /Review complete/);
+    assert.ok(!/Review started|Waiting for the review/.test(r.out));
+  });
+
+  test('--wait with no answer before the timeout says where to see it later, once, with the URL once', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait', '--timeout', '12'], {routes: waitRoutes(json(503, {code: 'unavailable'}))});
+    assert.equal(r.code, 1);
+    assert.equal(count(r.out + r.err, 'See it later'), 1, r.out);
+    assert.equal(count(r.out + r.err, URL_), 1);
+  });
+
+  test('--wait timing out on a running review adds one See it later line', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait', '--timeout', '12'], {routes: waitRoutes(detail('reviewing', null))});
+    assert.equal(r.code, 1);
+    assert.match(r.out, /Still running after/);
+    assert.equal(count(r.out + r.err, `See it later: zof review show ${REV}`), 1);
+    assert.equal(count(r.out + r.err, URL_), 1);
+  });
+
+  test('--wait --json keeps stdout one JSON document; progress goes to stderr', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait', '--json'], {routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
+    assert.equal(r.code, 0, r.err);
+    assert.deepEqual(Object.keys(JSON.parse(r.out)).sort(), ['findings', 'review', 'timed_out']);
+    assert.match(r.err, /Reviewing/);
+  });
+
+  test('--wait in a terminal hides the cursor while it waits and shows it again', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {tty: true, routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
+    assert.equal(r.code, 0, r.err);
+    assert.ok(r.raw.includes('\x1b[?25l'));
+    assert.ok(r.raw.endsWith('\x1b[?25h'));
+    assert.match(r.out, /Review complete/);
+    assert.equal(r.ticks.length, 1);
+    assert.deepEqual([r.interrupts.on, r.interrupts.off], [1, 1]);
+    assert.deepEqual(r.exits, []);
+  });
+
+  test('--wait in a terminal shows the cursor again before an error is printed', async () => {
+    const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {tty: true, routes: waitRoutes(json(404, {code: 'not_found'}))});
+    assert.equal(r.code, 1);
+    const shown = r.log.findIndex(l => l.stream === 'raw' && l.line.includes('\x1b[?25h'));
+    const error = r.log.findIndex(l => l.stream === 'err');
+    assert.ok(shown !== -1 && error !== -1 && shown < error, JSON.stringify(r.log));
+  });
+
+  test('review show --full prints the whole summary; --full --json equals --json', async () => {
+    const long = json(200, {review: {review_id: REV, status: 'done', complete: true, summary: 'This change reworks the database layer. '.repeat(20)}, findings: []});
+    const full = await run('review', ['show', REV, '--full'], {routes: {[`GET /api/reviews/${REV}`]: long}});
+    assert.equal(full.code, 0, full.err);
+    const summary = full.out.split('\n').filter(l => l.includes('database layer'));
+    assert.ok(summary.length > 5, full.out);
+    assert.ok(!full.out.includes('full summary in the console'));
+    const cut = await run('review', ['show', REV], {routes: {[`GET /api/reviews/${REV}`]: long}});
+    assert.ok(cut.out.includes('full summary in the console'));
+    const a = await run('review', ['show', REV, '--full', '--json'], {routes: {[`GET /api/reviews/${REV}`]: long}});
+    const b = await run('review', ['show', REV, '--json'], {routes: {[`GET /api/reviews/${REV}`]: long}});
+    assert.equal(a.out, b.out);
+    assert.match((await run('review', ['show', '--help'])).out, /zof review show <review-id> \[--full\] \[--json\]/);
+  });
+
+  test('no price is ever shown; --json still carries it', async () => {
+    const priced = () => json(200, {review: {review_id: REV, status: 'done', complete: true, summary: 'Fine.', usage: {usd: 0.44}}, findings: [], usage: {usd: 0.44}});
+    const outputs = [
+      await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {routes: waitRoutes([detail('reviewing', null), priced()])}),
+      await run('review', ['show', REV], {routes: {[`GET /api/reviews/${REV}`]: priced()}}),
+    ];
+    for (const r of outputs) {
+      assert.equal(r.code, 0, r.err);
+      assert.ok(!/\$\s?\d/.test(r.out + r.err) && !(r.out + r.err).includes('0.44'), r.out);
+    }
+    const j = await run('review', ['show', REV, '--json'], {routes: {[`GET /api/reviews/${REV}`]: priced()}});
+    assert.ok(j.out.includes('"usd": 0.44'));
+  });
 });
 
 describe('zof copilot', () => {
@@ -308,6 +404,24 @@ describe('zof copilot', () => {
     assert.match(r.out, /Two runs failed\./);
     assert.ok(!r.out.includes('secret'));
     assert.deepEqual(r.requests[1].body, {conversationId: 'c1', message: 'Why did runs fail?', stream: true});
+  });
+
+  test('ask in a terminal hides the cursor while it thinks, shows it again, then prints the answer', async () => {
+    const r = await run('copilot', ['ask', 'Why did runs fail?'], {tty: true, routes: {'POST /api/copilot/conversations': json(200, {id: 'c1'}), 'POST /api/copilot/chat': answer}});
+    assert.equal(r.code, 0, r.err);
+    assert.ok(r.raw.includes('\x1b[?25l') && r.raw.includes('\x1b[?25h'));
+    assert.ok(r.raw.includes('Looked up runs'), 'event lines go above the live line');
+    const shown = r.log.findIndex(l => l.stream === 'raw' && l.line.includes('\x1b[?25h'));
+    const answered = r.log.findIndex(l => l.stream === 'out' && l.line.includes('Two runs failed.'));
+    assert.ok(shown !== -1 && answered > shown);
+  });
+
+  test('ask in a terminal shows the cursor again before an error is printed', async () => {
+    const r = await run('copilot', ['ask', 'q'], {tty: true, routes: {'POST /api/copilot/conversations': json(503, {error: 'x', code: 'unavailable'}, {'retry-after': '60'})}});
+    assert.equal(r.code, 1);
+    const shown = r.log.findIndex(l => l.stream === 'raw' && l.line.includes('\x1b[?25h'));
+    const error = r.log.findIndex(l => l.stream === 'err');
+    assert.ok(shown !== -1 && error > shown);
   });
 
   test('ask --json carries no tokens; a blank question is a usage error (exit 2)', async () => {

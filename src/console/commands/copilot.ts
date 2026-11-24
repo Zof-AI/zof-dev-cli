@@ -3,7 +3,7 @@ import {ApiError} from '../api.js';
 import {UsageError} from '../args.js';
 import type {Command} from '../context.js';
 import {askTurn, cleanText, consoleApi, conversationTitle, errorHint, eventLine, jsonEvents, startConversation, turnOutcome, type CopilotEvent, type StopReason} from '../copilot-turn.js';
-import {banner, errorLine, paint} from '../output.js';
+import {banner, elapsed, errorLine, paint} from '../output.js';
 import {reviewJson} from '../review-render.js';
 
 const ask: Command = {
@@ -17,16 +17,26 @@ const ask: Command = {
     const {o, json} = ctx;
     let conversationId: string;
     let turn: {events: CopilotEvent[]; stopped: StopReason};
+    const start = ctx.deps.now();
+    const spin = json ? null : ctx.spin(() => `Thinking   ${elapsed(ctx.deps.now() - start)}`);
+    // The live line is gone (cursor back) before an error propagates or the answer prints.
     try {
-      conversationId = await startConversation(api, conversationTitle(question));
-      const id = conversationId;
-      turn = await askTurn(api, id, question, e => {
-        const line = json ? null : eventLine(e, id);
-        if (line) o.out(paint(o, 'dim', `  ${line}`));
-      });
-    } catch (error) {
-      if (error instanceof ApiError) throw new ApiError(error.statusCode, error.errorCode, errorHint(error), error.requestId);
-      throw error;
+      try {
+        conversationId = await startConversation(api, conversationTitle(question));
+        const id = conversationId;
+        turn = await askTurn(api, id, question, e => {
+          const line = json ? null : eventLine(e, id);
+          if (!line) return;
+          const text = paint(o, 'dim', `  ${line}`);
+          if (spin) spin.print(text);
+          else o.out(text);
+        });
+      } catch (error) {
+        if (error instanceof ApiError) throw new ApiError(error.statusCode, error.errorCode, errorHint(error), error.requestId);
+        throw error;
+      }
+    } finally {
+      spin?.stop();
     }
 
     const outcome = turnOutcome(turn.events, turn.stopped, conversationId);

@@ -8,6 +8,8 @@ export interface WaitOptions {
   intervalMs?: number
   now?: () => number
   sleep?: (ms: number) => Promise<void>
+  /** Called with every answer, the terminal one included, before the wait decides whether it is over. */
+  onDetail?: (detail: ReviewDetail) => void
 }
 
 export const isTerminal = (status: string): boolean => status === 'done' || status === 'failed'
@@ -26,13 +28,14 @@ export async function waitForReview(
   fetchDetail: (remainingMs: number) => Promise<ReviewDetail>,
   opts: WaitOptions,
 ): Promise<{detail: ReviewDetail | null; timedOut: boolean}> {
-  const {timeoutMs, intervalMs = POLL_INTERVAL_MS, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms))} = opts
+  const {timeoutMs, intervalMs = POLL_INTERVAL_MS, now = Date.now, sleep = (ms) => new Promise((r) => setTimeout(r, ms)), onDetail} = opts
   const deadline = now() + timeoutMs
   let last: ReviewDetail | null = null
   for (;;) {
     let pause = intervalMs
     try {
       last = await fetchDetail(deadline - now())
+      onDetail?.(last)
       if (isTerminal(last.review.status)) return {detail: last, timedOut: false}
     } catch (error) {
       if (!transient(error)) throw error
