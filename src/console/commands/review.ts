@@ -51,7 +51,8 @@ export const start: Command = {
     const g = glyphs(o);
     if (!json) {
       o.out('');
-      o.out(`  ${paint(o, 'bold', `Zof review ${g.dot} ${target.repo}#${target.pr}`)}`);
+      // The full id up front, so a Ctrl-C or a killed CI job still leaves something to `zof review show`.
+      o.out(`  ${paint(o, 'bold', `Zof review ${g.dot} ${target.repo}#${target.pr}`)}  ${paint(o, 'dim', started.review_id)}`);
     }
 
     const path = `/api/reviews/${encodeURIComponent(started.review_id)}`;

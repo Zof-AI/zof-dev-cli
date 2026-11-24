@@ -314,6 +314,10 @@ describe('zof review', () => {
     const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {routes: waitRoutes([detail('reviewing', null), detail('done', true)])});
     assert.equal(r.code, 0, r.err);
     assert.ok(r.out.includes('Zof review | acme/web#42'), r.out);
+    // The full id is on the header line, before any progress, so an interrupted wait can still be looked up.
+    const header = r.out.split('\n').find(l => l.includes('Zof review'));
+    assert.ok(header.includes(REV), header);
+    assert.ok(r.out.indexOf(REV) < r.out.indexOf('Reviewing'));
     assert.equal(r.out.split('\n').filter(l => /Reviewing \| 0s/.test(l)).length, 1, r.out);
     assert.ok(!/Reviewing \| 5s/.test(r.out), 'the terminal poll prints no progress line');
     assert.ok(!r.out.includes('\r') && !r.out.includes('\x1b') && r.raw === '');
