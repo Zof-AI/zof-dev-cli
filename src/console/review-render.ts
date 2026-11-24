@@ -37,8 +37,9 @@ const rank = (s: string): number => {
   const i = SEVERITIES.indexOf(s)
   return i === -1 ? SEVERITIES.length : i
 }
-const BADGE: Record<string, Style> = {critical: 'redBg', high: 'red', medium: 'yellow', low: 'blue'}
-const COUNT: Record<string, Style> = {critical: 'red', high: 'red', medium: 'yellow', low: 'blue', info: 'dim'}
+// Maps, not objects: a server severity such as `constructor` or `__proto__` must not find an inherited member.
+const BADGE = new Map<string, Style>([['critical', 'redBg'], ['high', 'red'], ['medium', 'yellow'], ['low', 'blue']])
+const COUNT = new Map<string, Style>([['critical', 'red'], ['high', 'red'], ['medium', 'yellow'], ['low', 'blue'], ['info', 'dim']])
 // Unknown severities show at most 8 characters, in the badge and in the heading.
 const short = (s: string): string => (SEVERITIES.includes(s) ? s : fit(s, 8, ''))
 const pad = (s: string, n: number): string => s + ' '.repeat(Math.max(0, n - [...s].length))
@@ -109,7 +110,13 @@ export function renderReview(detail: ReviewDetail, url: string, o: Out, opts: {f
   else {
     const counts = new Map<string, number>()
     for (const {sev} of shown) counts.set(sev, (counts.get(sev) ?? 0) + 1)
-    const parts = [...counts].map(([sev, n]) => (COUNT[sev] ? paint(o, COUNT[sev], `${n} ${sev}`) : `${n} ${short(sev)}`))
+    // Counts that do not fit the width are dropped for a trailing `…` (the list below still shows every finding).
+    const all = [...counts].map(([sev, n]) => ({sev, text: `${n} ${short(sev)}`}))
+    const room = (k: number, cut: boolean) => 13 + all.slice(0, k).reduce((w, p, i) => w + (i ? 2 : 0) + [...p.text].length, 0) + (cut ? 2 + [...g.more].length : 0)
+    let k = all.length
+    while (k > 0 && room(k, k < all.length) > W) k--
+    const parts = all.slice(0, k).map(({sev, text}) => (COUNT.has(sev) ? paint(o, COUNT.get(sev)!, text) : text))
+    if (k < all.length) parts.push(g.more)
     lines.push(`  ${paint(o, 'bold', 'Findings')}   ${parts.join('  ')}`, '')
 
     const label = (sev: string) => short(sev).toUpperCase()
@@ -118,7 +125,7 @@ export function renderReview(detail: ReviewDetail, url: string, o: Out, opts: {f
     const indent = ' '.repeat(C)
     const width = Math.max(20, W - C)
     for (const {f, sev} of shown) {
-      const badge = o.color ? paint(o, BADGE[sev] ?? 'dim', pad(` ${label(sev)} `, L + 2)) : pad(`[${label(sev)}]`, L + 2)
+      const badge = o.color ? paint(o, BADGE.get(sev) ?? 'dim', pad(` ${label(sev)} `, L + 2)) : pad(`[${label(sev)}]`, L + 2)
       const [first = '', ...rest] = wrap(str(f.title), width)
       lines.push(`  ${badge}  ${first}`, ...rest.map(l => indent + l))
       const where = place(f)

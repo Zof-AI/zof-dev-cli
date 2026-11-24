@@ -440,6 +440,28 @@ describe('renderReview', () => {
     assert.equal(full.slice(full.indexOf('  [HIGH]  T') + 1, full.indexOf('', full.indexOf('  [HIGH]  T'))).join(' ').replace(/ +/g, ' ').trim(), description)
   })
 
+  test('inherited object names as severities are just unknown severities', () => {
+    const lines = renderReview(with_({}, [f('constructor', 'A'), f('__proto__', 'B'), f('toString', 'C')]), SAMPLE_URL, on)
+    const text = lines.join('\n')
+    assert.ok(!text.includes('undefined'))
+    assert.doesNotMatch(text, /\x1b\[(?!\d+(;\d+)*m)/)
+    for (const [label, title] of [['CONSTRUC', 'A'], ['__PROTO_', 'B'], ['TOSTRING', 'C']]) {
+      assert.ok(lines.includes(`  \x1b[90m ${label} \x1b[0m  ${title}`), label)
+    }
+    assert.equal(strip(lines.find(l => strip(l).startsWith('  Findings'))), '  Findings   1 construc  1 __proto_  1 toString')
+  })
+
+  test('the findings heading stays within the width', () => {
+    const many = ['critical', 'high', 'medium', 'low', 'info'].flatMap(s => Array.from({length: 12}, () => f(s, s)))
+    for (const o of [out({width: 60}), out({width: 60, color: false, unicode: false})]) {
+      const heading = renderReview(with_({}, many), SAMPLE_URL, o).find(l => strip(l).startsWith('  Findings'))
+      assert.ok(visible(heading) <= 60, strip(heading))
+      assert.ok(strip(heading).startsWith('  Findings   12 critical  12 high'))
+    }
+    const wide = renderReview(with_({}, many), SAMPLE_URL, out({width: 80})).find(l => strip(l).startsWith('  Findings'))
+    assert.equal(strip(wide), '  Findings   12 critical  12 high  12 medium  12 low  12 info')
+  })
+
   test('badge colour per severity', () => {
     const lines = renderReview(with_({}, ['critical', 'high', 'medium', 'low', 'info'].map(s => f(s, s))), SAMPLE_URL, on)
     const line = s => lines.find(l => strip(l).endsWith(`  ${s}`) && strip(l).includes(s.toUpperCase()))
