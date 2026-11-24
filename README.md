@@ -8,7 +8,7 @@ Run local static change checks, inspect dependencies, execute explicitly trusted
 Use Node.js 22 or 24 and npm. File-based operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. In a new project directory, install the version used by this guide:
 
 ```sh
-npm install --ignore-scripts --save-exact @zof-ai/cli@0.1.3
+npm install --ignore-scripts --save-exact @zof-ai/cli@0.2.0
 npx --no-install zof --help
 ```
 
@@ -37,7 +37,7 @@ Package: [@zof-ai/cli](https://www.npmjs.com/package/@zof-ai/cli). The source-ch
 Requires Node.js 22 or 24, npm, and Git. Filesystem operations require Linux or macOS with Python 3.10 or newer; Windows file operations fail closed. Clone this repository and explicitly prepare its reviewed release dependencies:
 
 ```sh
-git clone --branch v0.1.3 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
+git clone --branch v0.2.0 --depth 1 https://github.com/Zof-AI/zof-dev-cli.git
 cd zof-dev-cli
 node scripts/bootstrap.mjs --allow-network
 npm ci --ignore-scripts --prefer-offline
@@ -93,6 +93,48 @@ Initialization exclusively creates `zof.config.json`; it will not overwrite one.
 
 `--json` selects structured reports. `--root DIR` sets the workspace. `--base REF [--head REF]` compares revisions; the checkout must match an explicitly supplied head. Repeated `--changed PATH` supplies explicit relative files. `--fail-on` selects info/low/medium/high/critical (default high). Exit 0 is a successful completed check, 1 is a configured failure and 2 is invalid, missing or incomplete execution. Standard errors are concise; JSON reports contain detailed structured findings without source excerpts.
 
+## Zof console commands
+
+The same `zof` also drives the Zof console: sign in once, then review pull requests, ask Copilot and follow runs from the terminal.
+
+```sh
+zof auth login                                   # device code flow; opens the console sign-in page
+zof review https://github.com/acme/web/pull/42 --wait
+zof review show rev_01JD0000000000000000000000 --json
+zof copilot ask "Why did the last run fail?"
+zof runs list --status running
+zof services status
+```
+
+| topic | commands |
+|---|---|
+| auth | `login [--no-browser]`, `logout`, `whoami`, `tokens` |
+| config | `list`, `get <key>`, `set <key> <value>`, `use-org <id>`, `use-env <id>` (keys: `console_url`, `org_id`, `env_id`, `output_format`, `color`) |
+| review | `<pr-url> [--wait [--timeout SECONDS]]` (default 900, at most 3600), `show <review-id>` |
+| copilot | `ask "<question>"`, `chat` (read-only from the CLI: answers and look-ups, never changes) |
+| agents | `list [--category] [--family] [--class]`, `show <key>`, `health <key>`, `run <key> [--target-url] [--target-repo] [--config JSON]` |
+| runs | `list [--status] [--limit] [--page]`, `show <id>`, `create --name NAME [--trigger]`, `cancel <id>`, `stream <id>` |
+| artifacts | `list --run-id ID`, `show <id> --run-id ID`, `download <id> --run-id ID [-o FILE]` |
+| approvals | `list [--status]`, `show <id>`, `approve <id> [--reason]`, `reject <id> [--reason]` |
+| services | `status`, `ping` |
+| events | `stream [--topics a,b]` |
+
+Every console command takes `--json` and `--help`. Exit 0 is success, 1 a failure or refusal (including not signed in), 2 a usage error. `zof review --wait` and `zof review show` exit 0 only for a review that finished and is complete, so CI can gate on them. `zof auth login` keeps the sign-in in `~/.zof/credentials.json` (mode 0600) and sends it only to the console that issued it; CI sets `ZOF_TOKEN` instead.
+
+## Environment variables
+
+The local tools need none. The release gate and the console commands each read their own, so one pipeline can set both.
+
+| variable | used by | meaning |
+|---|---|---|
+| `ZOF_GATE_TOKEN` | `zof gate` | pipeline token (`zgt_`); required, never a flag |
+| `ZOF_API_URL` | `zof gate` | the Control Plane URL from Settings > Pipeline tokens. Console commands never read it. |
+| `ZOF_CONSOLE_URL` | console commands | console origin; default `https://console.zof.ai`. https only (http for localhost). Overrides `console_url` in `~/.zof/config.json`. |
+| `ZOF_TOKEN` | console commands | CLI token (`zofcli_`) for CI; overrides the `zof auth login` sign-in |
+| `ZOF_ORG_ID`, `ZOF_ENV_ID` | console commands | active organization and environment; override `zof config use-org` / `use-env` |
+| `ZOF_OUTPUT` | console commands | `table` (default) or `json` in `zof config list` |
+| `ZOF_NO_COLOR=1`, `NO_COLOR` | console commands | no colour (colour is used only on a terminal anyway) |
+
 ## Trusted test execution
 
 Configure `testCommands` with `{name,argv,timeoutMs}` and a maximum timeout of 300000 ms. `argv[0]` is an executable, never a shell string. Tests run only on an explicit `test --allow-exec` invocation. This executes code with the caller's filesystem permissions; use only trusted commands. Untrusted AI candidates belong in the isolated evaluator. No command executes during static verification, init, policy or IDE/MCP analysis. Child output is discarded; only status and duration are recorded. Environment inheritance is limited to executable lookup and platform/temp variables. Do not put credentials in argv.
@@ -101,7 +143,7 @@ Configure `testCommands` with `{name,argv,timeoutMs}` and a maximum timeout of 3
 
 Static rules identify dynamic evaluation, disabled TLS verification, enabled shell execution and selected credential patterns. They are review signals and can have false positives and false negatives. They do not prove code safe. Non-code text/assets are outside these checks; unsupported source is partial. Import analysis limitations are reported separately from static checks. Dirty working-tree evidence has no commit attribution because it is not the committed tree. Skipped/unconfigured tests never become passing test evidence.
 
-No telemetry, repository upload or hosted requests occur. Public API documentation exists, but authentication, quotas and tenant isolation have not been accepted against an approved environment; hosted integration is unavailable. See [SECURITY.md](SECURITY.md), [API](docs/API.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [release process](docs/RELEASE.md). Built independently for [Zof](https://zof.ai); Licensed under [Apache-2.0](LICENSE).
+The local commands make no telemetry, repository upload or hosted request. Only `zof gate` and the console commands talk to Zof, and only when you run them. See [SECURITY.md](SECURITY.md), [API](docs/API.md), [CONTRIBUTING.md](CONTRIBUTING.md) and [release process](docs/RELEASE.md). Built independently for [Zof](https://zof.ai); Licensed under [Apache-2.0](LICENSE).
 
 ## Additional public modules
 
