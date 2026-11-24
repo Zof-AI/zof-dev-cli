@@ -1,3 +1,5 @@
+import {terminalJson} from './api.js';
+
 /** Terminal output without dependencies: colour only on request, plain tables, one line per write. */
 export interface Out {
   out(line: string): void;
@@ -18,7 +20,7 @@ export function table(o: Out, headers: string[], rows: string[][]): string {
   return [line(headers.map(h => paint(o, 'bold', h))), widths.map(w => '-'.repeat(w)).join('  '), ...rows.map(line)].map(l => `  ${l}`).join('\n');
 }
 
-export const formatJson = (data: unknown): string => JSON.stringify(data, null, 2);
+export const formatJson = (data: unknown): string => terminalJson(data, 2);
 
 export function formatStatus(o: Out, status: string): string {
   const lower = status.toLowerCase().trim();

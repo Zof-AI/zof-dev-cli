@@ -6,10 +6,30 @@ export function stripControl(text: string): string {
     // eslint-disable-next-line no-control-regex
     .replace(/\u001b\][^\u0007\u001b]*(?:\u0007|\u001b\\)?|\u001b\[[0-?]*[ -/]*[@-~]|\u001b./g, '')
     // eslint-disable-next-line no-control-regex
-    .replace(/[\u0000-\u001f\u007f]+/g, ' ')
+    .replace(/[\u0000-\u001f\u007f-\u009f]+/g, ' ')
     .replace(/ {2,}/g, ' ')
     .trim();
 }
+
+// eslint-disable-next-line no-control-regex
+const CONTROLS = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/g;
+
+/** Every string in a parsed answer, once, at the edge: newline and tab stay; other C0, DEL and C1 (a one-byte CSI) go. */
+export function sanitize<T>(value: T): T {
+  if (typeof value === 'string') return value.replace(CONTROLS, '') as T;
+  if (Array.isArray(value)) return value.map(sanitize) as T;
+  if (value && typeof value === 'object') {
+    const out: Record<string, unknown> = {};
+    for (const [k, v] of Object.entries(value)) out[k.replace(CONTROLS, '')] = sanitize(v);
+    return out as T;
+  }
+
+  return value;
+}
+
+/** JSON for the terminal: JSON.stringify escapes C0; this also escapes U+007F-U+009F, and it still parses to the same data. */
+export const terminalJson = (data: unknown, indent?: number): string =>
+  JSON.stringify(data, null, indent).replace(/[\u007f-\u009f]/g, c => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`);
 
 export class ApiError extends Error {
   constructor(
@@ -60,7 +80,7 @@ export class ApiClient {
   async request<T = unknown>(path: string, options: RequestOptions = {}): Promise<T> {
     const response = await this.send(path, options);
     try {
-      return await response.json() as T;
+      return sanitize(await response.json()) as T;
     } catch (error) {
       throw new ApiError(0, 'UNKNOWN_ERROR', error instanceof Error ? error.message : String(error));
     }

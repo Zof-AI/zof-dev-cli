@@ -4,7 +4,7 @@ import {join} from 'node:path';
 import type {SecretStore} from '../run/keychain.js';
 import {readSignIn, type SignIn} from '../run/common.js';
 import {consoleOrigin} from './api.js';
-import {loadConfig, type Env} from './config.js';
+import {DEFAULT_CONSOLE_URL, loadConfig, type Env} from './config.js';
 
 export type Where = 'keychain' | 'file' | 'env';
 export interface Found extends SignIn {where: Where}
@@ -31,31 +31,31 @@ function fromFile(home: string): SignIn | null {
     const token = typeof v.access_token === 'string' ? v.access_token : '';
     const issuer = typeof v.console_url === 'string' ? v.console_url : typeof v.api_url === 'string' ? v.api_url : '';
     const expires = typeof v.expires_at === 'string' ? Date.parse(v.expires_at) : NaN;
-    // A file that names no console predates the binding: it counts for whichever console is configured.
-    return token ? {v: 1, token, console: issuer ? (origin(issuer) ?? '') : '', expires_at: Number.isFinite(expires) ? expires : Number.POSITIVE_INFINITY} : null;
+    // A file that names no console predates the binding; it was made for the production console, so it counts only there.
+    return token ? {v: 1, token, console: issuer ? (origin(issuer) ?? '') : DEFAULT_CONSOLE_URL, expires_at: Number.isFinite(expires) ? expires : Number.POSITIVE_INFINITY} : null;
   } catch {
     return null;
   }
 }
 
-/** ZOF_TOKEN wins; then the keychain, then the file. A saved sign-in counts only for the console that issued it. */
+/** The saved sign-in (keychain, else file), whatever console is configured and whether ZOF_TOKEN is set. */
+export async function storedSignIn(deps: SignInDeps): Promise<Found | null> {
+  const store = await deps.store().catch(() => null);
+  if (store) {
+    const s = readSignIn(await store.get().catch(() => null));
+    if (s) return {...s, where: 'keychain'};
+  }
+
+  const s = fromFile(deps.home);
+  return s ? {...s, where: 'file'} : null;
+}
+
+/** ZOF_TOKEN wins; then the saved sign-in, which counts only for the console that issued it. */
 export async function findSignIn(deps: SignInDeps): Promise<Found | null> {
   const consoleUrl = origin(loadConfig(deps.env, deps.home).console_url) ?? '';
   const fromEnv = deps.env.ZOF_TOKEN;
   if (fromEnv) return {v: 1, token: fromEnv, console: consoleUrl, expires_at: Number.POSITIVE_INFINITY, where: 'env'};
-  let found: Found | null = null;
-  const store = await deps.store().catch(() => null);
-  if (store) {
-    const raw = await store.get().catch(() => null);
-    const s = readSignIn(raw);
-    if (s) found = {...s, where: 'keychain'};
-  }
-
-  if (!found) {
-    const s = fromFile(deps.home);
-    if (s) found = {...s, console: s.console || consoleUrl, where: 'file'};
-  }
-
+  const found = await storedSignIn(deps);
   return found && found.console === consoleUrl ? found : null;
 }
 
@@ -75,9 +75,19 @@ export async function saveSignIn(deps: SignInDeps, signIn: SignIn): Promise<{whe
   return {where: 'file', name: '~/.zof/credentials.json'};
 }
 
-/** Removes the sign-in from the keychain and the file, whatever is there. */
-export async function clearSignIn(deps: SignInDeps): Promise<void> {
+/** Removes the sign-in from the keychain and the file; true only when neither holds one afterwards. */
+export async function clearSignIn(deps: SignInDeps): Promise<boolean> {
+  let ok = true;
   const store = await deps.store().catch(() => null);
-  if (store) await store.delete().catch(() => false);
-  rmSync(credentialsFile(deps.home), {force: true});
+  if (store) {
+    try {
+      await store.delete();
+      if (await store.get()) ok = false;
+    } catch {
+      ok = false;
+    }
+  }
+
+  try { rmSync(credentialsFile(deps.home), {force: true}); } catch { ok = false; }
+  return ok && !existsSync(credentialsFile(deps.home));
 }

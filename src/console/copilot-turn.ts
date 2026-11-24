@@ -1,4 +1,4 @@
-import {ApiError, type ApiClient} from './api.js'
+import {ApiError, sanitize, type ApiClient} from './api.js'
 
 /** One event of the console's turn stream (dash src/copilot/stream/events.ts); only the fields the CLI reads are typed. */
 export type CopilotEvent = {type: string; [key: string]: unknown}
@@ -57,7 +57,7 @@ export async function readEvents(
         buffer = buffer.slice(end + 2)
         let event: unknown
         try {
-          event = data ? JSON.parse(data) : null
+          event = data ? sanitize(JSON.parse(data)) : null
         } catch {
           continue
         }

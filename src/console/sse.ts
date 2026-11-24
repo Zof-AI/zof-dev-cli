@@ -1,4 +1,4 @@
-import {ApiError, consoleOrigin, type ApiClient} from './api.js';
+import {ApiError, consoleOrigin, sanitize, type ApiClient} from './api.js';
 
 export interface SseEvent {id: string; type: string; entityType: string; entityId: string | null; payload: unknown; createdAt: string}
 
@@ -33,7 +33,7 @@ export async function readSse(body: ReadableStream<Uint8Array>, onEvent: (event:
         else if (line.startsWith('data:')) data.push(line.slice(5).replace(/^ /, ''));
         else if (line === '' && data.length) {
           try {
-            const parsed = JSON.parse(data.join('\n')) as SseEvent;
+            const parsed = sanitize(JSON.parse(data.join('\n'))) as SseEvent;
             if (parsed && typeof parsed.type === 'string' && parsed.type !== 'connected') onEvent({...parsed, id: parsed.id || id});
           } catch {
             // An unparseable frame is skipped.

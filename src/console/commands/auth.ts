@@ -1,8 +1,8 @@
-import {ApiError, consoleOrigin} from '../api.js';
+import {ApiClient, ApiError, consoleOrigin} from '../api.js';
 import {UsageError} from '../args.js';
 import {saveConfig} from '../config.js';
 import {isToken} from '../../run/common.js';
-import {clearSignIn, FILE_NOTE, saveSignIn} from '../signin.js';
+import {clearSignIn, FILE_NOTE, saveSignIn, storedSignIn} from '../signin.js';
 import type {Command, Ctx} from '../context.js';
 import {banner, errorLine, formatJson, formatTimestamp, info, keyValue, paint, success, table} from '../output.js';
 
@@ -120,33 +120,37 @@ const login: Command = {
 
 const logout: Command = {
   usage: 'zof auth logout   (alias: zof logout)',
-  summary: 'Revoke the sign-in in Zof and remove it from this computer (keychain and file)',
+  summary: 'Revoke the saved sign-in in Zof, then remove it from this computer (keychain and file)',
   async run(ctx) {
     const {o, deps} = ctx;
-    const found = await ctx.signIn();
-    if (deps.env.ZOF_TOKEN) {
-      info(o, 'ZOF_TOKEN is set in this shell: it is not revoked or removed. Unset it, and revoke the token in the console if it should stop working.');
-      await clearSignIn(deps);
-      return 0;
-    }
-
+    // The saved sign-in, whatever console is configured now: it is revoked at the console that issued it.
+    const saved = await storedSignIn(deps);
     let revoked = false;
     let why = '';
-    if (found) {
+    if (saved) {
       try {
-        const r = await ctx.client().post<{ok?: boolean}>('/api/auth/device/revoke', {}, {requireAuth: false, headers: {Authorization: `Bearer ${found.token}`}});
+        const client = new ApiClient({...ctx.client().settings, baseUrl: saved.console, token: null});
+        const r = await client.post<{ok?: boolean}>('/api/auth/device/revoke', {}, {requireAuth: false, headers: {Authorization: `Bearer ${saved.token}`}});
         revoked = r?.ok === true;
+        if (!revoked) why = 'no confirmation';
       } catch (error) {
         why = error instanceof ApiError ? error.errorCode : 'unavailable';
       }
     }
 
     // Removed from this computer whatever Zof answered: a local copy is never kept once logout is asked.
-    await clearSignIn(deps);
-    if (!found) { success(o, 'You are not signed in on this computer.'); return 0; }
-    if (revoked) { success(o, 'Signed out: Zof revoked the sign-in and it was removed from this computer.'); return 0; }
-    errorLine(o, `Removed from this computer, but Zof could not revoke the sign-in (${why || 'no confirmation'}). Revoke it in the console under your CLI tokens to end it now.`);
-    return 1;
+    const removed = await clearSignIn(deps);
+    let code = 0;
+    if (!saved) success(o, 'There is no saved sign-in on this computer.');
+    else if (!removed) { errorLine(o, 'The sign-in could not be removed from this computer (is the OS keychain locked?). Unlock it and run zof auth logout again.'); code = 1; }
+    if (saved && revoked && removed) success(o, 'Signed out: Zof revoked the sign-in and it was removed from this computer.');
+    if (saved && !revoked) {
+      errorLine(o, `${removed ? 'Removed from this computer, but ' : ''}Zof could not revoke the sign-in (${why}). Revoke it in the console under your CLI tokens to end it now.`);
+      code = 1;
+    }
+
+    if (deps.env.ZOF_TOKEN) info(o, 'ZOF_TOKEN is set in this shell: it is not revoked or removed. Unset it, and revoke that token in the console if it should stop working.');
+    return code;
   },
 };
 

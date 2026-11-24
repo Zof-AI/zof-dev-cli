@@ -397,3 +397,72 @@ describe('the zof binary', () => {
     assert.match(gate.stdout + gate.stderr, /ZOF_GATE_TOKEN/);
   });
 });
+
+describe('server text never reaches the terminal raw', () => {
+  // OSC title, clear screen, a one-byte CSI (U+009B), BEL and DEL inside every kind of server string, and a key.
+  const evil = 'A\u001b]0;pwned\u0007\u001b[2J\u009b31mB\u007f\r';
+  const RAW = /[\u0000-\u0008\u000b-\u001f\u007f-\u009f]/;
+  const check = (r, label) => {
+    const text = `${r.out}\n${r.err}`;
+    assert.doesNotMatch(text, RAW, `${label}: a raw control character reached the terminal`);
+    assert.ok(!text.includes('\u001b') && !text.includes('\u009b'), label);
+  };
+
+  test('agents list, auth whoami and events stream, in table and --json modes', async () => {
+    const agents = json(200, {data: [{key: 'k' + evil, name: evil, agent_class: evil, category_key: evil, status: evil, [`x${evil}`]: evil}]});
+    const session = json(200, {user: {id: evil, email: evil, name: evil}, tenant: {id: evil, name: evil, slug: evil}, scopes: [evil]});
+    const events = () => new Response(`id: 1\ndata: ${JSON.stringify({type: 'run.' + evil, entityId: evil, createdAt: '2030-01-01T00:00:00Z', payload: {message: evil}})}\n\n`, {headers: {'content-type': 'text/event-stream'}});
+    for (const mode of [[], ['--json']]) {
+      const a = await run('agents', ['list', ...mode], {routes: {'GET /api/ai-agents': agents}});
+      assert.equal(a.code, 0, a.err);
+      check(a, `agents list ${mode}`);
+      const w = await run('auth', ['whoami', ...mode], {routes: {'GET /api/cli/session': session}});
+      assert.equal(w.code, 0, w.err);
+      check(w, `auth whoami ${mode}`);
+      const e = await run('events', ['stream', ...mode], {routes: {'GET /api/events/stream': events}});
+      check(e, `events stream ${mode}`);
+      assert.match(e.out, /pwned/, 'the text itself is kept, only the controls go');
+      if (mode.length) for (const out of [a.out, w.out, e.out]) assert.doesNotThrow(() => JSON.parse(out));
+    }
+  });
+
+  test('a C1 character in an error message is dropped too', async () => {
+    const r = await run('runs', ['list'], {routes: {'GET /api/runs': json(500, {message: 'bad\u009b2Jworse'})}});
+    assert.equal(r.code, 1);
+    check(r, 'error');
+  });
+});
+
+describe('logout and the saved sign-in', () => {
+  const kept = (console = 'http://localhost:3000') => JSON.stringify({v: 1, console, token: TOKEN, expires_at: Date.now() + 3600_000});
+
+  test('revokes the saved sign-in at the console that issued it, even with ZOF_TOKEN set or another console configured', async () => {
+    for (const env of [{ZOF_CONSOLE_URL: 'http://localhost:3000', ZOF_TOKEN: 'zofcli_' + 'c'.repeat(20)}, {ZOF_CONSOLE_URL: 'http://127.0.0.1:4000'}]) {
+      const r = await run('auth', ['logout'], {env, store: memoryStore(kept()), routes: {'POST /api/auth/device/revoke': json(200, {ok: true})}});
+      assert.equal(r.code, 0, r.err);
+      assert.equal(r.requests.length, 1);
+      assert.equal(r.requests[0].headers.Authorization, `Bearer ${TOKEN}`, 'the saved token is revoked, not ZOF_TOKEN');
+      assert.equal(r.store.peek(), null);
+      if (env.ZOF_TOKEN) assert.match(r.out, /ZOF_TOKEN is set/);
+    }
+  });
+
+  test('says removed only when the keychain delete worked', async () => {
+    const stuck = {...memoryStore(kept()), delete: async () => { throw new Error('locked'); }};
+    const r = await run('auth', ['logout'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, store: stuck, routes: {'POST /api/auth/device/revoke': json(200, {ok: true})}});
+    assert.equal(r.code, 1);
+    assert.doesNotMatch(r.out, /removed from this computer/);
+    assert.match(r.err, /could not be removed/);
+  });
+
+  test('a legacy credentials file that names no console counts only for the production console', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'zof-cfg-'));
+    try {
+      mkdirSync(join(home, '.zof'));
+      writeFileSync(join(home, '.zof', 'credentials.json'), JSON.stringify({access_token: 'zofcli_legacy'}));
+      const deps = env => ({env, home, store: async () => null});
+      assert.equal((await findSignIn(deps({}))).token, 'zofcli_legacy');
+      assert.equal(await findSignIn(deps({ZOF_CONSOLE_URL: 'http://localhost:3000'})), null);
+    } finally { rmSync(home, {recursive: true, force: true}); }
+  });
+});

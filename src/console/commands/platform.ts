@@ -1,4 +1,4 @@
-import {consoleOrigin} from '../api.js';
+import {consoleOrigin, terminalJson} from '../api.js';
 import {required, type Command, type Ctx} from '../context.js';
 import {banner, errorLine, formatJson, formatStatus, info, paint, table, warn} from '../output.js';
 import {connectSse, type SseEvent} from '../sse.js';
@@ -22,7 +22,7 @@ async function stream(ctx: Ctx, topics: string[] | undefined, title: string, sho
         const line = show(e);
         if (line === null) return;
         count++;
-        o.out(ctx.json ? JSON.stringify(e) : line);
+        o.out(ctx.json ? terminalJson(e) : line);
       },
       onDisconnect: () => { if (!ctx.json && !controller.signal.aborted) warn(o, 'Disconnected from event stream'); },
       onError: err => errorLine(o, `Stream error: ${err.message}`),
