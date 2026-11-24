@@ -13,10 +13,14 @@ import {AGENTS, APPROVALS, ARTIFACTS, RUNS} from './commands/resources.js';
 import {show as reviewShow, start as reviewStart} from './commands/review.js';
 import {makeCtx, NotSignedIn, type Command, type ConsoleDeps} from './context.js';
 import {errorLine, info} from './output.js';
+import {loadStore} from '../run/keychain.js';
+import {productionRunDeps, spawnProcess} from '../run/index.js';
+import {RUN_HELP, runCommand} from '../run/run.js';
 
 export {ApiClient, ApiError, consoleOrigin, stripControl} from './api.js';
 export {parseArgs, UsageError} from './args.js';
-export {DEFAULT_CONSOLE_URL, loadConfig, loadCredentials, saveConfig, consoleToken} from './config.js';
+export {DEFAULT_CONSOLE_URL, loadConfig, saveConfig} from './config.js';
+export {findSignIn, saveSignIn, clearSignIn, FILE_NOTE} from './signin.js';
 export {DEVICE_CLIENT_ID, authorizeBody, tokenBody} from './commands/auth.js';
 export {DEFAULT_TIMEOUT_S, MAX_TIMEOUT_S} from './commands/review.js';
 export * from './copilot-turn.js';
@@ -42,11 +46,20 @@ const TOPICS: Record<string, {summary: string; commands: Record<string, Command>
   events: {summary: 'Live platform events', commands: EVENTS},
 };
 
-export const CONSOLE_TOPICS: ReadonlySet<string> = new Set(Object.keys(TOPICS));
+export const CONSOLE_TOPICS: ReadonlySet<string> = new Set([...Object.keys(TOPICS), 'login', 'logout', 'run']);
+
+/** `zof login`/`zof logout` are `zof auth login`/`logout`; `zof run …` is `zof runs create …` and `zof run cancel` is `zof runs cancel`. */
+export function resolveAlias(command: string, argv: string[]): [string, string[]] {
+  if (command === 'login' || command === 'logout') return ['auth', [command, ...argv]];
+  if (command === 'run') return argv[0] === 'cancel' ? ['runs', argv] : ['runs', ['create', ...argv]];
+  return [command, argv];
+}
+
+const wantsTestRun = (argv: string[]) => argv.some(a => a === '--repo' || a.startsWith('--repo='));
 
 export const CONSOLE_HELP = `Zof console commands (sign in with zof auth login, or set ZOF_TOKEN):
 ${Object.entries(TOPICS).map(([t, v]) => `  ${t.padEnd(10)} ${v.summary}`).join('\n')}
-Run zof <topic> --help for its commands. Env: ZOF_CONSOLE_URL (default https://console.zof.ai), ZOF_TOKEN, ZOF_ORG_ID, ZOF_ENV_ID, ZOF_OUTPUT, ZOF_NO_COLOR.
+Aliases: zof login, zof logout, zof run (= zof runs create). Run zof <topic> --help for its commands. Env: ZOF_CONSOLE_URL (default https://console.zof.ai), ZOF_TOKEN, ZOF_ORG_ID, ZOF_ENV_ID, ZOF_OUTPUT, ZOF_NO_COLOR.
 Exit 0 success, 1 failure or refusal, 2 usage.`;
 
 const isHelp = (a: string | undefined) => a === '--help' || a === '-h' || a === 'help';
@@ -73,15 +86,19 @@ export async function consoleCommand(topic: string, argv: string[], deps: Consol
     return asked ? 0 : 2;
   }
 
-  if (rest.some(a => a === '--help' || a === '-h')) { deps.write('out', `${command.usage}\n  ${command.summary}`); return 0; }
+  const testRunHelp = topic === 'runs' && argv[0] === 'create' ? `\n\nOr plan, confirm and follow a test run (exit codes 0-4 as below):\n${RUN_HELP}` : '';
+  if (rest.some(a => a === '--help' || a === '-h')) { deps.write('out', `${command.usage}\n  ${command.summary}${testRunHelp}`); return 0; }
   const json = rest.includes('--json');
   const ctx = makeCtx(deps, json);
+  // The planned test-run flow keeps its own parser and exit codes; it shares only the sign-in.
+  if (topic === 'runs' && argv[0] === 'create' && wantsTestRun(rest)) return deps.testRun(rest, ctx.signIn);
+  if (topic === 'runs' && argv[0] === 'cancel' && /^mrun_/i.test(rest[0] ?? '')) return deps.testRun(['cancel', ...rest], ctx.signIn);
   try {
     const parsed = parseArgs(rest.filter(a => a !== '--json'), command.flags ?? {}, command.args?.length ?? 0);
     return await command.run(ctx, parsed);
   } catch (error) {
     if (error instanceof UsageError) { errorLine(ctx.o, error.message); info(ctx.o, `Usage: ${command.usage}`); return 2; }
-    if (error instanceof NotSignedIn) { errorLine(ctx.o, 'Not authenticated. Run `zof auth login` first, or set ZOF_TOKEN.'); return 1; }
+    if (error instanceof NotSignedIn) { errorLine(ctx.o, error.message); return 1; }
     if (error instanceof ApiError) {
       const prefix = error.statusCode === 404 ? 'Not found: ' : ![0, 401, 402, 403].includes(error.statusCode) ? `Error (${error.statusCode}): ` : '';
       errorLine(ctx.o, `${prefix}${error.message}`);
@@ -112,7 +129,10 @@ function openUrl(url: string): Promise<boolean> {
 }
 
 export function productionDeps(version: string): ConsoleDeps {
+  let store: ReturnType<ConsoleDeps['store']> | undefined;
   return {
+    store: () => (store ??= loadStore({platform: process.platform, spawn: spawnProcess, native: () => import('@napi-rs/keyring')})),
+    testRun: (argv, signIn) => runCommand(argv, productionRunDeps(version, signIn)),
     version, env: process.env, home: homedir(), fetch: globalThis.fetch,
     write: (stream, line) => { (stream === 'out' ? process.stdout : process.stderr).write(line + '\n'); },
     sleep: ms => new Promise(resolve => setTimeout(resolve, ms)),
@@ -124,6 +144,7 @@ export function productionDeps(version: string): ConsoleDeps {
   };
 }
 
-export function runConsole(topic: string, argv: string[], version: string): Promise<number> {
-  return consoleCommand(topic, argv, productionDeps(version));
+export function runConsole(command: string, argv: string[], version: string): Promise<number> {
+  const [topic, rest] = resolveAlias(command, argv);
+  return consoleCommand(topic, rest, productionDeps(version));
 }

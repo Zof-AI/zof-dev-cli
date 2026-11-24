@@ -1,4 +1,4 @@
-import {chmodSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync} from 'node:fs';
+import {existsSync, mkdirSync, readFileSync, writeFileSync} from 'node:fs';
 import {join} from 'node:path';
 
 /** The hosted Zof console; ZOF_CONSOLE_URL or `zof config set console_url` points elsewhere (another region, a local console). */
@@ -14,14 +14,6 @@ export interface ConsoleConfig {
   color: boolean;
 }
 
-export interface Credentials {
-  access_token: string;
-  org_id?: string;
-  console_url?: string;
-  created_at?: string;
-  expires_at?: string;
-}
-
 /** Keys `zof config set` accepts; `api_url` is the name the pre-0.2 console CLI used and is kept as an alias. */
 export const CONFIG_KEYS = ['console_url', 'org_id', 'env_id', 'output_format', 'color'] as const;
 export type ConfigKey = (typeof CONFIG_KEYS)[number];
@@ -29,7 +21,6 @@ export const configKey = (key: string): ConfigKey | null => (key === 'api_url' ?
 
 const dir = (home: string) => join(home, '.zof');
 const configPath = (home: string) => join(dir(home), 'config.json');
-const credentialsPath = (home: string) => join(dir(home), 'credentials.json');
 
 function readJson(path: string): Record<string, unknown> {
   if (!existsSync(path)) return {};
@@ -64,34 +55,4 @@ export function saveConfig(home: string, patch: Partial<Record<ConfigKey, string
   writeFileSync(configPath(home), JSON.stringify(merged, null, 2) + '\n', {mode: 0o600});
 }
 
-/** ZOF_TOKEN (for CI) wins over the stored sign-in. */
-export function loadCredentials(env: Env, home: string): Credentials | null {
-  const fromEnv = text(env.ZOF_TOKEN);
-  if (fromEnv) return {access_token: fromEnv};
-  const stored = readJson(credentialsPath(home));
-  const token = text(stored.access_token);
-  return token ? {...stored, access_token: token} as Credentials : null;
-}
-
-export function saveCredentials(home: string, credentials: Credentials): void {
-  mkdirSync(dir(home), {recursive: true, mode: 0o700});
-  writeFileSync(credentialsPath(home), JSON.stringify(credentials, null, 2) + '\n', {mode: 0o600});
-  chmodSync(credentialsPath(home), 0o600);
-}
-
-export function clearCredentials(home: string): void {
-  rmSync(credentialsPath(home), {force: true});
-}
-
-const sameConsole = (a: string, b: string): boolean => a.replace(/\/+$/, '') === b.replace(/\/+$/, '');
-
-/** A saved sign-in goes only to the console that issued it, so a local token never reaches production; ZOF_TOKEN is used as given. */
-export function consoleToken(env: Env, home: string): string | null {
-  const creds = loadCredentials(env, home);
-  if (!creds) return null;
-  const issuer = creds.console_url ?? text((creds as unknown as Record<string, unknown>).api_url);
-  if (issuer && !text(env.ZOF_TOKEN) && !sameConsole(issuer, loadConfig(env, home).console_url)) return null;
-  return creds.access_token;
-}
-
-export const orgId =(env: Env, home: string): string | null => loadConfig(env, home).org_id ?? loadCredentials(env, home)?.org_id ?? null;
+export const orgId = (env: Env, home: string): string | null => loadConfig(env, home).org_id ?? null;

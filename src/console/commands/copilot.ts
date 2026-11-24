@@ -13,7 +13,7 @@ const ask: Command = {
   async run(ctx, p) {
     const question = (p.args[0] ?? '').trim();
     if (!question) throw new UsageError('Ask a question: zof copilot ask "<question>"');
-    const api = consoleApi(ctx.authed());
+    const api = consoleApi(await ctx.authed());
     const {o, json} = ctx;
     let conversationId: string;
     let turn: {events: CopilotEvent[]; stopped: StopReason};
@@ -45,7 +45,7 @@ const chat: Command = {
   usage: 'zof copilot chat',
   summary: 'Chat with Copilot (read-only from the CLI: it can answer and look things up, not change anything)',
   async run(ctx) {
-    const api = consoleApi(ctx.authed());
+    const api = consoleApi(await ctx.authed());
     const {o} = ctx;
     banner(o, 'Zof Copilot');
     o.out(paint(o, 'dim', "  Read-only from the CLI: Copilot can answer and look things up, but can't start, approve or change anything."));

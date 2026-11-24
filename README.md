@@ -98,28 +98,37 @@ Initialization exclusively creates `zof.config.json`; it will not overwrite one.
 The same `zof` also drives the Zof console: sign in once, then review pull requests, ask Copilot and follow runs from the terminal.
 
 ```sh
-zof auth login                                   # device code flow; opens the console sign-in page
+zof auth login                                   # (or zof login) device code flow; opens the console sign-in page
 zof review https://github.com/acme/web/pull/42 --wait
 zof review show rev_01JD0000000000000000000000 --json
 zof copilot ask "Why did the last run fail?"
 zof runs list --status running
+zof run --repo acme/app --pr 12 --site https://staging.acme.example --site-env staging --category security
 zof services status
+zof auth logout                                  # (or zof logout)
 ```
 
 | topic | commands |
 |---|---|
-| auth | `login [--no-browser]`, `logout`, `whoami`, `tokens` |
+| auth | `login [--console-url URL] [--no-browser]`, `logout`, `whoami`, `tokens` (`zof login` / `zof logout` are aliases) |
 | config | `list`, `get <key>`, `set <key> <value>`, `use-org <id>`, `use-env <id>` (keys: `console_url`, `org_id`, `env_id`, `output_format`, `color`) |
 | review | `<pr-url> [--wait [--timeout SECONDS]]` (default 900, at most 3600), `show <review-id>` |
 | copilot | `ask "<question>"`, `chat` (read-only from the CLI: answers and look-ups, never changes) |
 | agents | `list [--category] [--family] [--class]`, `show <key>`, `health <key>`, `run <key> [--target-url] [--target-repo] [--config JSON]` |
-| runs | `list [--status] [--limit] [--page]`, `show <id>`, `create --name NAME [--trigger]`, `cancel <id>`, `stream <id>` |
+| runs | `list [--status] [--limit] [--page]`, `show <id>`, `create --name NAME [--trigger]`, `create --repo OWNER/NAME (--pr N \| --commit SHA) --site/--api URL --category C [--yes]` (planned test run; `zof run` is an alias), `cancel <id>`, `stream <id>` |
 | artifacts | `list --run-id ID`, `show <id> --run-id ID`, `download <id> --run-id ID [-o FILE]` |
 | approvals | `list [--status]`, `show <id>`, `approve <id> [--reason]`, `reject <id> [--reason]` |
 | services | `status`, `ping` |
 | events | `stream [--topics a,b]` |
 
-Every console command takes `--json` and `--help`. Exit 0 is success, 1 a failure or refusal (including not signed in), 2 a usage error. `zof review --wait` and `zof review show` exit 0 only for a review that finished and is complete, so CI can gate on them. `zof auth login` keeps the sign-in in `~/.zof/credentials.json` (mode 0600) and sends it only to the console that issued it; CI sets `ZOF_TOKEN` instead.
+Every console command takes `--json` and `--help`. Exit 0 is success, 1 a failure or refusal (including not signed in), 2 a usage error. `zof review --wait` and `zof review show` exit 0 only for a review that finished and is complete, so CI can gate on them. **One sign-in.** `zof auth login` keeps the sign-in in your OS keychain (macOS Keychain, Windows Credential Manager, or a Secret Service keyring on Linux) through a pinned native binding. On Linux without the binding it uses `secret-tool`, which reads the secret from stdin, so the sign-in never appears in a process's arguments. Only where no keychain exists does it fall back to `~/.zof/credentials.json` (mode 0600), and it tells you so. A saved sign-in is sent only to the console that issued it. CI sets `ZOF_TOKEN` instead. `zof auth logout` revokes it in Zof and removes it from the keychain and the file.
+
+**Planned test runs.** `zof runs create --repo …` (or `zof run …`) plans the tests, prints each with its gate and the price, asks `Run N tests for <price>? [y/N]`, then starts exactly the ticked tests with the plan's fingerprint and only the origins you pass with `--authorize`, and follows the run.
+- `--yes` skips the question only when stdin is not a terminal.
+- Ctrl-C stops following and never cancels; use `zof runs cancel mrun_…` to cancel.
+- `--pr` without `--commit` reads the pull request's head from this checkout's `origin`, and only if `origin` is that repository on github.com.
+- These runs never change whether a pull request can ship.
+- Exit codes: 0 all passed, 1 issues found or not all checked, 2 invalid input or a refusal, 3 Zof unavailable, 4 not signed in.
 
 ## Environment variables
 
@@ -130,7 +139,7 @@ The local tools need none. The release gate and the console commands each read t
 | `ZOF_GATE_TOKEN` | `zof gate` | pipeline token (`zgt_`); required, never a flag |
 | `ZOF_API_URL` | `zof gate` | the Control Plane URL from Settings > Pipeline tokens. Console commands never read it. |
 | `ZOF_CONSOLE_URL` | console commands | console origin; default `https://console.zof.ai`. https only (http for localhost). Overrides `console_url` in `~/.zof/config.json`. |
-| `ZOF_TOKEN` | console commands | CLI token (`zofcli_`) for CI; overrides the `zof auth login` sign-in |
+| `ZOF_TOKEN` | console commands and test runs | CLI token (`zofcli_`) for CI; overrides the `zof auth login` sign-in |
 | `ZOF_ORG_ID`, `ZOF_ENV_ID` | console commands | active organization and environment; override `zof config use-org` / `use-env` |
 | `ZOF_OUTPUT` | console commands | `table` (default) or `json` in `zof config list` |
 | `ZOF_NO_COLOR=1`, `NO_COLOR` | console commands | no colour (colour is used only on a terminal anyway) |

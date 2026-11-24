@@ -25,7 +25,7 @@ export const start: Command = {
     const target = parsePrUrl(required(p, 0, 'pull request URL'));
     if (!target.ok) throw new UsageError(target.message);
     if (p.flags.timeout !== undefined && !p.flags.wait) throw new UsageError('--timeout only applies with --wait.');
-    const client = ctx.authed();
+    const client = await ctx.authed();
     const {o, json} = ctx;
     let started: StartedReview;
     try {
@@ -78,7 +78,7 @@ export const show: Command = {
   async run(ctx, p) {
     const id = required(p, 0, 'review ID');
     if (!REVIEW_ID.test(id)) throw new UsageError(`Not a review ID: ${id.slice(0, 40)}. Expected rev_ followed by 26 letters or digits.`);
-    const client = ctx.authed();
+    const client = await ctx.authed();
     const detail = await client.get<ReviewDetail>(`/api/reviews/${id}`);
     if (ctx.json) ctx.o.out(reviewJson(detail));
     else for (const line of renderReview(detail, reviewUrl(client.baseUrl, id))) ctx.o.out(`  ${line}`);

@@ -7,7 +7,7 @@ const s = (v: unknown): string => (typeof v === 'string' || typeof v === 'number
 
 /** Streams until Ctrl+C or the server closes; the line printer decides what each event shows. */
 async function stream(ctx: Ctx, topics: string[] | undefined, title: string, show: (e: SseEvent) => string | null): Promise<number> {
-  const client = ctx.authed();
+  const client = await ctx.authed();
   const {o} = ctx;
   const started = ctx.deps.now();
   let count = 0;

@@ -27,7 +27,7 @@ const agentsList: Command = {
   summary: 'List available agents',
   flags: {category: {kind: 'string'}, family: {kind: 'string'}, class: {kind: 'string'}},
   async run(ctx, p) {
-    const r = await ctx.authed().get<{data?: Row[]; agents?: Row[]}>(`/api/ai-agents${query({category: p.flags.category, family: p.flags.family, class: p.flags.class})}`);
+    const r = await (await ctx.authed()).get<{data?: Row[]; agents?: Row[]}>(`/api/ai-agents${query({category: p.flags.category, family: p.flags.family, class: p.flags.class})}`);
     const agents = r.data || r.agents || [];
     if (emit(ctx, agents)) return 0;
     banner(ctx.o, 'Agents');
@@ -44,7 +44,7 @@ const agentsShow: Command = {
   args: ['key'],
   async run(ctx, p) {
     const key = required(p, 0, 'agent key');
-    const r = await ctx.authed().get<{data?: Row; agent?: Row}>(`/api/ai-agents/${seg(key)}`);
+    const r = await (await ctx.authed()).get<{data?: Row; agent?: Row}>(`/api/ai-agents/${seg(key)}`);
     const a = r.data || r.agent;
     if (!a) { ctx.o.err(`  Agent not found: ${key}`); return 1; }
     if (emit(ctx, a)) return 0;
@@ -62,7 +62,7 @@ const agentsHealth: Command = {
   args: ['key'],
   async run(ctx, p) {
     const key = required(p, 0, 'agent key');
-    const r = await ctx.authed().get<{data?: Row} & Row>(`/api/ai-agents/${seg(key)}`);
+    const r = await (await ctx.authed()).get<{data?: Row} & Row>(`/api/ai-agents/${seg(key)}`);
     const a = r.data || r;
     if (emit(ctx, a)) return 0;
     banner(ctx.o, `Agent Health: ${key}`);
@@ -83,7 +83,7 @@ const agentsRun: Command = {
       try { config = JSON.parse(String(p.flags.config)); } catch { throw new UsageError('Invalid JSON in --config.'); }
     }
 
-    const client = ctx.authed();
+    const client = await ctx.authed();
     if (!ctx.json) { banner(ctx.o, `Running Agent: ${key}`); info(ctx.o, 'Dispatching agent...'); }
     const r = await client.post<{data?: Row} & Row>(`/api/ai-agents/${seg(key)}/operator-action`, {agent_key: key, action: 'run', target_url: p.flags['target-url'], target_repo: p.flags['target-repo'], config});
     if (emit(ctx, r)) return 0;
@@ -102,7 +102,7 @@ const runsList: Command = {
   summary: 'List runs',
   flags: {status: {kind: 'string'}, limit: {kind: 'int', min: 1, max: 500}, page: {kind: 'int', min: 1}},
   async run(ctx, p) {
-    const r = await ctx.authed().get<{data?: {runs?: Row[]; total?: number}}>(`/api/runs${query({status: p.flags.status, limit: p.flags.limit ?? 25, page: p.flags.page ?? 1})}`);
+    const r = await (await ctx.authed()).get<{data?: {runs?: Row[]; total?: number}}>(`/api/runs${query({status: p.flags.status, limit: p.flags.limit ?? 25, page: p.flags.page ?? 1})}`);
     const runs = r.data?.runs || [];
     if (emit(ctx, r.data)) return 0;
     banner(ctx.o, 'Runs');
@@ -119,7 +119,7 @@ const runsShow: Command = {
   args: ['run-id'],
   async run(ctx, p) {
     const id = required(p, 0, 'run ID');
-    const run = (await ctx.authed().get<{data?: Row}>(`/api/runs/${seg(id)}`)).data;
+    const run = (await (await ctx.authed()).get<{data?: Row}>(`/api/runs/${seg(id)}`)).data;
     if (!run) { ctx.o.err(`  Run not found: ${id}`); return 1; }
     if (emit(ctx, run)) return 0;
     const duration = run.startedAt && run.completedAt ? formatDuration(new Date(s(run.completedAt)).getTime() - new Date(s(run.startedAt)).getTime()) : undefined;
@@ -142,7 +142,7 @@ const runsCreate: Command = {
   async run(ctx, p) {
     if (typeof p.flags.name !== 'string') throw new UsageError('--name is required.');
     const body = buildRunCreateBody({name: p.flags.name, trigger: (p.flags.trigger as string | undefined) ?? 'api', 'target-url': p.flags['target-url'] as string | undefined, branch: p.flags.branch as string | undefined, environment: p.flags.environment as string | undefined});
-    const run = (await ctx.authed().post<{data: Row}>('/api/runs', body)).data;
+    const run = (await (await ctx.authed()).post<{data: Row}>('/api/runs', body)).data;
     if (emit(ctx, run)) return 0;
     success(ctx.o, `Run created: ${s(run.id)}`);
     keyValue(ctx.o, [['ID', s(run.id)], ['Name', s(run.title)], ['Status', s(run.status)]]);
@@ -157,7 +157,7 @@ const runsCancel: Command = {
   args: ['run-id'],
   async run(ctx, p) {
     const id = required(p, 0, 'run ID');
-    const r = await ctx.authed().put(`/api/runs/${seg(id)}`, {status: 'cancelled'});
+    const r = await (await ctx.authed()).put(`/api/runs/${seg(id)}`, {status: 'cancelled'});
     if (emit(ctx, r)) return 0;
     success(ctx.o, `Run ${id} cancelled`);
     return 0;
@@ -168,7 +168,7 @@ const runsCancel: Command = {
 
 async function artifactsOf(ctx: Ctx, runId: unknown): Promise<Row[]> {
   if (typeof runId !== 'string') throw new UsageError('--run-id is required.');
-  const r = await ctx.authed().get<{data?: Row[]; artifacts?: Row[]} | Row[]>(`/api/engine-runs/${seg(runId)}/artifacts`);
+  const r = await (await ctx.authed()).get<{data?: Row[]; artifacts?: Row[]} | Row[]>(`/api/engine-runs/${seg(runId)}/artifacts`);
   return Array.isArray(r) ? r : r.data || r.artifacts || [];
 }
 
@@ -229,7 +229,7 @@ const approvalsList: Command = {
   summary: 'List remediation plans',
   flags: {status: {kind: 'string', options: ['pending', 'approved', 'rejected', 'applied']}},
   async run(ctx, p) {
-    const r = await ctx.authed().get<{data?: Row[]; plans?: Row[]}>(`/api/remediation/plans${query({status: p.flags.status})}`);
+    const r = await (await ctx.authed()).get<{data?: Row[]; plans?: Row[]}>(`/api/remediation/plans${query({status: p.flags.status})}`);
     const plans = r.data || r.plans || [];
     if (emit(ctx, plans)) return 0;
     banner(ctx.o, 'Approvals');
@@ -246,7 +246,7 @@ const approvalsShow: Command = {
   args: ['plan-id'],
   async run(ctx, p) {
     const id = required(p, 0, 'plan ID');
-    const r = await ctx.authed().get<{data?: Row} & Row>(`/api/remediation/plans/${seg(id)}`);
+    const r = await (await ctx.authed()).get<{data?: Row} & Row>(`/api/remediation/plans/${seg(id)}`);
     const plan = r.data || r;
     if (emit(ctx, plan)) return 0;
     banner(ctx.o, `Remediation Plan: ${s(plan.title) || id}`);
@@ -270,7 +270,7 @@ const decide = (verb: 'approve' | 'reject'): Command => ({
   flags: {reason: {kind: 'string'}},
   async run(ctx, p) {
     const id = required(p, 0, 'plan ID');
-    const r = await ctx.authed().post(`/api/remediation/plans/${seg(id)}/${verb}`, {reason: p.flags.reason, source: 'cli'});
+    const r = await (await ctx.authed()).post(`/api/remediation/plans/${seg(id)}/${verb}`, {reason: p.flags.reason, source: 'cli'});
     if (emit(ctx, r)) return 0;
     success(ctx.o, `Plan ${id} ${verb === 'approve' ? 'approved' : 'rejected'}`);
     return 0;

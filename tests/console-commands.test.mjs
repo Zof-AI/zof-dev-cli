@@ -5,20 +5,26 @@ import {join, resolve} from 'node:path';
 import {tmpdir} from 'node:os';
 import {Readable} from 'node:stream';
 import {spawnSync} from 'node:child_process';
-import {consoleCommand, DEVICE_CLIENT_ID, authorizeBody, tokenBody, DEFAULT_CONSOLE_URL, loadConfig, consoleToken} from '../dist/console/index.js';
+import {consoleCommand, resolveAlias, DEVICE_CLIENT_ID, authorizeBody, tokenBody, DEFAULT_CONSOLE_URL, loadConfig, findSignIn, FILE_NOTE} from '../dist/console/index.js';
 
 // Synthetic values only: a throwaway home, a scripted console, no network.
 const TOKEN = 'zofcli_' + 'T'.repeat(24);
 const REV = 'rev_' + '0'.repeat(25) + '1';
 const json = (status, body, headers = {}) => new Response(JSON.stringify(body), {status, headers: {'content-type': 'application/json', ...headers}});
 
-async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}} = {}) {
+function memoryStore(initial = null) {
+  let value = initial;
+  return {name: 'the test keychain', get: async () => value, set: async v => { value = v; }, delete: async () => { const had = value !== null; value = null; return had; }, peek: () => value};
+}
+
+async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes = {}, input = '', files = {}, store = memoryStore()} = {}) {
   const home = mkdtempSync(join(tmpdir(), 'zof-console-home-'));
   for (const [p, c] of Object.entries(files)) { mkdirSync(join(home, '.zof'), {recursive: true}); writeFileSync(join(home, '.zof', p), c); }
   const requests = [];
   const lines = [];
   const opened = [];
   const written = {};
+  const testRuns = [];
   let t = 0;
   const fetch = async (url, init = {}) => {
     const u = new URL(url);
@@ -36,11 +42,13 @@ async function run(topic, argv, {env = {ZOF_TOKEN: TOKEN, ZOF_CONSOLE_URL: 'http
     openUrl: async url => { opened.push(url); return true; },
     writeFile: (p, c) => { written[p] = c; },
     input: Readable.from([input]), onInterrupt: () => () => {},
+    store: async () => store,
+    testRun: async (a, signIn) => { testRuns.push({argv: a, signIn: await signIn()}); return 0; },
   };
   try {
     const code = await consoleCommand(topic, argv, deps);
     const read = name => (existsSync(join(home, '.zof', name)) ? readFileSync(join(home, '.zof', name), 'utf8') : null);
-    return {code, requests, opened, written, out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
+    return {code, requests, opened, written, testRuns, store, out: lines.filter(l => l.stream === 'out').map(l => l.line).join('\n'), err: lines.filter(l => l.stream === 'err').map(l => l.line).join('\n'), config: read('config.json'), credentials: read('credentials.json'), credMode: existsSync(join(home, '.zof', 'credentials.json')) ? statSync(join(home, '.zof', 'credentials.json')).mode & 0o777 : null};
   } finally {
     rmSync(home, {recursive: true, force: true});
   }
@@ -59,26 +67,53 @@ describe('zof auth', () => {
   const device = {device_code: 'dc_1', user_code: 'ABCD-EFGH', verification_uri: 'http://localhost:3000/device', verification_uri_complete: 'http://localhost:3000/device?code=ABCD-EFGH', expires_in: 600, interval: 1};
   const session = {user: {id: 'u1', email: 'dev@example.test', name: 'Dev'}, tenant: {id: 'org_1', name: 'Example', slug: 'example'}, scopes: ['cli']};
 
-  test('login polls through pending and slow_down, then stores the token 0600 bound to its console', async () => {
-    const r = await run('auth', ['login'], {
-      env: {ZOF_CONSOLE_URL: 'http://localhost:3000'},
-      routes: {
-        'POST /api/auth/device/authorize': json(200, device),
-        'POST /api/auth/device/token': [json(400, {error: 'authorization_pending'}), json(400, {error: 'slow_down'}), json(200, {access_token: TOKEN, token_type: 'Bearer', expires_in: 3600, scope: 'cli'})],
-        'GET /api/cli/session': json(200, session),
-      },
-    });
+  const loginRoutes = () => ({
+    'POST /api/auth/device/authorize': json(200, device),
+    'POST /api/auth/device/token': [json(400, {error: 'authorization_pending'}), json(400, {error: 'slow_down'}), json(200, {access_token: TOKEN, token_type: 'Bearer', expires_in: 3600, scope: 'cli'})],
+    'GET /api/cli/session': json(200, session),
+  });
+
+  test('login polls through pending and slow_down, then keeps the sign-in in the OS keychain only, bound to its console', async () => {
+    const r = await run('auth', ['login'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes: loginRoutes(), files: {'credentials.json': JSON.stringify({access_token: 'zofcli_' + 'o'.repeat(20)})}});
     assert.equal(r.code, 0, r.err);
     assert.deepEqual(r.requests[0].body, {client_id: 'zof-cli-app', scope: 'cli', cli_metadata: {hostname: 'host-1', machine_label: 'host-1-cli', platform: 'linux', cli_version: '9.9.9-test'}});
     assert.equal(r.requests.filter(q => q.path === '/api/auth/device/token').length, 3);
     assert.equal(r.requests.at(-1).headers.Authorization, `Bearer ${TOKEN}`);
     assert.deepEqual(r.opened, [device.verification_uri_complete]);
-    const creds = JSON.parse(r.credentials);
-    assert.deepEqual([creds.access_token, creds.org_id, creds.console_url], [TOKEN, 'org_1', 'http://localhost:3000']);
-    assert.equal(r.credMode, 0o600);
+    const kept = JSON.parse(r.store.peek());
+    assert.deepEqual([kept.v, kept.token, kept.console], [1, TOKEN, 'http://localhost:3000']);
+    assert.equal(r.credentials, null, 'no file copy is left once the keychain holds it');
     assert.equal(JSON.parse(r.config).org_id, 'org_1');
     assert.match(r.out, /Authenticated as dev@example\.test/);
+    assert.match(r.out, /Saved in the test keychain/);
     assert.ok(!r.out.includes(TOKEN) && !r.err.includes(TOKEN), 'the token is never printed');
+  });
+
+  test('login without an OS keychain falls back to a 0600 file and says so', async () => {
+    const r = await run('auth', ['login'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes: loginRoutes(), store: null});
+    assert.equal(r.code, 0, r.err);
+    assert.equal(JSON.parse(r.credentials).token, TOKEN);
+    assert.equal(r.credMode, 0o600);
+    assert.ok(r.out.includes(FILE_NOTE));
+  });
+
+  test('a keychain that refuses saves nothing anywhere; an unusable token saves nothing', async () => {
+    const locked = {...memoryStore(), set: async () => { throw new Error('locked'); }};
+    const r = await run('auth', ['login'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes: loginRoutes(), store: locked});
+    assert.equal(r.code, 1);
+    assert.match(r.err, /keychain refused/);
+    assert.equal(r.credentials, null);
+    const odd = await run('auth', ['login'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, routes: {...loginRoutes(), 'POST /api/auth/device/token': json(200, {access_token: 'nope', expires_in: 60})}});
+    assert.equal(odd.code, 1);
+    assert.equal(odd.store.peek(), null);
+  });
+
+  test('zof login --console-url saves that console for the commands that follow', async () => {
+    const [topic, argv] = resolveAlias('login', ['--console-url', 'http://127.0.0.1:3000']);
+    const r = await run(topic, argv, {env: {}, routes: {...loginRoutes(), 'POST /api/auth/device/authorize': json(200, {...device, verification_uri_complete: 'http://127.0.0.1:3000/device'})}});
+    assert.equal(r.code, 0, r.err);
+    assert.equal(JSON.parse(r.config).console_url, 'http://127.0.0.1:3000');
+    assert.equal(JSON.parse(r.store.peek()).console, 'http://127.0.0.1:3000');
   });
 
   test('login stops on access_denied and never opens a page on another host', async () => {
@@ -89,7 +124,7 @@ describe('zof auth', () => {
     assert.equal(r.code, 1);
     assert.deepEqual(r.opened, []);
     assert.match(r.err, /denied/);
-    assert.equal(r.credentials, null);
+    assert.equal(r.store.peek(), null);
   });
 
   test('an unknown client id is shown from the server, not as an expired session', async () => {
@@ -109,9 +144,19 @@ describe('zof auth', () => {
     const r = await run('auth', ['whoami', '--json'], {routes: {'GET /api/cli/session': json(200, session)}});
     assert.equal(r.code, 0);
     assert.equal(JSON.parse(r.out).tenant.slug, 'example');
-    const out = await run('auth', ['logout'], {files: {'credentials.json': JSON.stringify({access_token: TOKEN})}});
-    assert.equal(out.code, 0);
+  });
+
+  test('logout revokes the sign-in in Zof and removes it from the keychain and the file', async () => {
+    const kept = JSON.stringify({v: 1, console: 'http://localhost:3000', token: TOKEN, expires_at: Date.now() + 3600_000});
+    const out = await run('auth', ['logout'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, store: memoryStore(kept), files: {'credentials.json': kept}, routes: {'POST /api/auth/device/revoke': json(200, {ok: true})}});
+    assert.equal(out.code, 0, out.err);
+    assert.equal(out.requests[0].headers.Authorization, `Bearer ${TOKEN}`);
+    assert.equal(out.store.peek(), null);
     assert.equal(out.credentials, null);
+    const failed = await run(...resolveAlias('logout', []), {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, store: memoryStore(kept), routes: {'POST /api/auth/device/revoke': json(503, {code: 'unavailable'})}});
+    assert.equal(failed.code, 1);
+    assert.equal(failed.store.peek(), null, 'removed here even when Zof cannot revoke');
+    assert.match(failed.err, /could not revoke/);
   });
 });
 
@@ -133,17 +178,54 @@ describe('console URL and token (production default, token bound to its console)
     try { assert.equal(loadConfig({ZOF_API_URL: 'https://cp.example.test'}, home).console_url, 'https://console.zof.ai'); } finally { rmSync(home, {recursive: true, force: true}); }
   });
 
-  test('a saved token goes only to the console that issued it; ZOF_TOKEN is used as given', () => {
+  test('a saved sign-in goes only to the console that issued it; ZOF_TOKEN is used as given; the older file still works', async () => {
     const home = mkdtempSync(join(tmpdir(), 'zof-cfg-'));
     try {
+      const store = memoryStore(JSON.stringify({v: 1, console: 'http://localhost:3000', token: 'zofcli_' + 'l'.repeat(20), expires_at: 9e15}));
+      const deps = env => ({env, home, store: async () => store});
+      assert.equal((await findSignIn(deps({ZOF_CONSOLE_URL: 'http://localhost:3000'}))).where, 'keychain');
+      assert.equal(await findSignIn(deps({ZOF_CONSOLE_URL: 'https://console.zof.ai'})), null);
+      assert.deepEqual(await findSignIn(deps({ZOF_CONSOLE_URL: 'https://console.zof.ai', ZOF_TOKEN: 'zofcli_ci'})).then(f => [f.token, f.where]), ['zofcli_ci', 'env']);
       mkdirSync(join(home, '.zof'));
-      writeFileSync(join(home, '.zof', 'credentials.json'), JSON.stringify({access_token: 'zofcli_local', api_url: 'http://localhost:3000/'}));
-      assert.equal(consoleToken({ZOF_CONSOLE_URL: 'http://localhost:3000'}, home), 'zofcli_local');
-      assert.equal(consoleToken({ZOF_CONSOLE_URL: 'https://console.zof.ai'}, home), null);
-      assert.equal(consoleToken({ZOF_CONSOLE_URL: 'https://console.zof.ai', ZOF_TOKEN: 'zofcli_ci'}, home), 'zofcli_ci');
-      writeFileSync(join(home, '.zof', 'credentials.json'), JSON.stringify({access_token: 'zofcli_old'}));
-      assert.equal(consoleToken({}, home), 'zofcli_old');
+      writeFileSync(join(home, '.zof', 'credentials.json'), JSON.stringify({access_token: 'zofcli_old', api_url: 'http://localhost:3000/'}));
+      const noKeychain = env => ({env, home, store: async () => null});
+      assert.equal((await findSignIn(noKeychain({ZOF_CONSOLE_URL: 'http://localhost:3000'}))).token, 'zofcli_old');
+      assert.equal(await findSignIn(noKeychain({ZOF_CONSOLE_URL: 'https://console.zof.ai'})), null);
+      writeFileSync(join(home, '.zof', 'credentials.json'), JSON.stringify({access_token: 'zofcli_older'}));
+      assert.equal((await findSignIn(noKeychain({}))).token, 'zofcli_older');
     } finally { rmSync(home, {recursive: true, force: true}); }
+  });
+
+  test('an expired sign-in exits 1 and sends nothing', async () => {
+    const r = await run('runs', ['list'], {env: {ZOF_CONSOLE_URL: 'http://localhost:3000'}, store: memoryStore(JSON.stringify({v: 1, console: 'http://localhost:3000', token: TOKEN, expires_at: -1}))});
+    assert.equal(r.code, 1);
+    assert.match(r.err, /expired/);
+    assert.equal(r.requests.length, 0);
+  });
+});
+
+describe('one sign-in: aliases and the test-run flow', () => {
+  test('zof login, zof logout and zof run resolve to auth login, auth logout and runs create/cancel', () => {
+    assert.deepEqual(resolveAlias('login', ['--no-browser']), ['auth', ['login', '--no-browser']]);
+    assert.deepEqual(resolveAlias('logout', []), ['auth', ['logout']]);
+    assert.deepEqual(resolveAlias('run', ['--repo', 'acme/app']), ['runs', ['create', '--repo', 'acme/app']]);
+    assert.deepEqual(resolveAlias('run', ['cancel', 'mrun_1']), ['runs', ['cancel', 'mrun_1']]);
+  });
+
+  test('runs create --repo hands the planned test run the same sign-in; --name keeps the simple create', async () => {
+    const r = await run(...resolveAlias('run', ['--repo', 'acme/app', '--pr', '12', '--site', 'https://staging.example.test', '--category', 'security']));
+    assert.equal(r.code, 0);
+    assert.deepEqual(r.testRuns.map(t => [t.argv, t.signIn.token, t.signIn.where]), [[['--repo', 'acme/app', '--pr', '12', '--site', 'https://staging.example.test', '--category', 'security'], TOKEN, 'env']]);
+    assert.equal(r.requests.length, 0);
+    const cancel = await run('runs', ['cancel', 'mrun_01HZX3K9Q7W2M4N5P6R7S8T9VA']);
+    assert.deepEqual(cancel.testRuns[0].argv, ['cancel', 'mrun_01HZX3K9Q7W2M4N5P6R7S8T9VA']);
+  });
+
+  test('runs create --help shows both forms', async () => {
+    const r = await run(...resolveAlias('run', ['--help']));
+    assert.equal(r.code, 0);
+    assert.match(r.out, /--name NAME/);
+    assert.match(r.out, /--repo OWNER\/NAME/);
   });
 });
 
