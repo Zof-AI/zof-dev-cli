@@ -83,7 +83,10 @@ export function wrap(text: string, width: number): string[] {
 /** Plain text cut to `width` code points, ending with `more` when cut. */
 export function fit(text: string, width: number, more: string): string {
   const chars = [...text];
-  return chars.length <= width ? text : chars.slice(0, Math.max(0, width - [...more].length)).join('') + more;
+  const marker = [...more];
+  if (chars.length <= width) return text;
+  if (width <= marker.length) return marker.slice(0, Math.max(0, width)).join('');
+  return chars.slice(0, width - marker.length).join('') + more;
 }
 
 export function elapsed(ms: number): string {
@@ -113,5 +116,5 @@ export function spinner(o: Out, t: TtyDeps, text: () => string): Spinner {
     t.raw(`${CLEAR}\x1b[?25h`);
   };
   const off = t.onInterrupt(() => { stop(); t.exit(130); });
-  return {stop, print: line => { if (done) return; t.raw(`${CLEAR}${line}\n`); draw(); }};
+  return {stop, print: line => { if (done) { t.raw(`${line}\n`); return; } t.raw(`${CLEAR}${line}\n`); draw(); }};
 }

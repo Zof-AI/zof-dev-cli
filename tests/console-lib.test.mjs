@@ -5,7 +5,7 @@ import {
   cleanText, eventLine, jsonEvents, readEvents, turnOutcome, askTurn, conversationTitle, errorHint, startConversation,
   renderReview, renderNoAnswer, reviewJson, startReview, reviewUrl, parsePrUrl, PR_URL_HELP, waitForReview, reviewExitCode,
   buildRunCreateBody, RUN_CREATE_TRIGGERS, readSse, formatJson, formatDuration,
-  utf8Locale, glyphs, wrap, fit, elapsed, spinner,
+  utf8Locale, glyphs, wrap, fit, elapsed, spinner, visible, progressText,
 } from '../dist/console/index.js';
 
 // Synthetic values only; no real network, tokens or customers.
@@ -302,45 +302,204 @@ describe('copilot turn wiring', () => {
 // --- review (ported from the console repo's review-* tests)
 
 const URL_ = 'https://console.test/code-review/rev_1';
-const detail = (review, findings = []) => ({review: {review_id: 'rev_1', status: 'done', ...review}, findings});
+
+const strip = s => s.replace(/\x1b\[[0-9;]*m/g, '')
+const SUMMARY = "This pull request changes customer account order detail loading to eagerly load the order's items and addresses. It also replaces the customer-scoped lookup with a lookup by order ID alone, so an authenticated customer can request another customer's order by changing the ID in the URL. Additionally, the eager loading adds two extra queries to every order page, which the reviewers could not measure in this run."
+const SAMPLE_URL = 'https://console.zof.ai/code-review/rev_0SPWBZKZABCDEFGHIJKLMNOPQR'
+const SAMPLE = {
+  review: {
+    review_id: 'rev_0SPWBZKZABCDEFGHIJKLMNOPQR', status: 'done', complete: true, repo: 'delight-test/delight-store', pr: 7,
+    created_at: '2026-11-24T10:00:00Z', finished_at: '2026-11-24T10:01:54Z', coverage: {reviewed: ['packages/Webkul/Shop/src/Http/Controllers/Customer/Account/OrderController.php']},
+    usage: {usd: 0.44}, summary: SUMMARY, counts_by_severity: {high: 1},
+  },
+  findings: [{
+    severity: 'high', title: 'Restore customer ownership filtering when loading order details',
+    source_location: {path: 'packages/Webkul/Shop/src/Http/Controllers/Customer/Account/OrderController.php', line: 51},
+    description: "The lookup by order ID alone lets any signed-in customer read another customer's items, names, addresses and phone numbers.",
+  }],
+}
+const SNAPSHOT = `  ✔ Review complete · 1 finding · 1m 54s
+    delight-test/delight-store#7 · 1 file reviewed
+
+  Summary
+    This pull request changes customer account order detail loading to eagerly
+    load the order's items and addresses. It also replaces the customer-scoped
+    lookup with a lookup by order ID alone, so an authenticated customer can
+    request another customer's order by changing the ID in the URL.
+    … full summary in the console
+
+  Findings   1 high
+
+   HIGH   Restore customer ownership filtering when loading order details
+          packages/Webkul/Shop/src/Http/Controllers/Customer/Account/OrderController.php:51
+          The lookup by order ID alone lets any signed-in customer read another
+          customer's items, names, addresses and phone numbers.
+
+  ────────────────────────────────────────────────────────────
+  rev_0SPWBZKZ…  ·  ${SAMPLE_URL}`
 
 describe('renderReview', () => {
-  test('prints id, status, completeness, summary and counts, then the console link last', () => {
-    const lines = renderReview(detail({complete: true, summary: 'Two issues.', counts_by_severity: {high: 2, critical: 1, low: 0}}), URL_);
-    for (const l of ['ID: rev_1', 'Status: done', 'Complete: yes', 'Summary: Two issues.', 'Findings: critical 1 · high 2']) assert.ok(lines.includes(l), l);
-    assert.equal(lines.at(-1), `Open in console: ${URL_}`);
-  });
+  const out = (over = {}) => ({out() {}, err() {}, color: true, unicode: true, width: 80, ...over})
+  const on = out(), off = out({color: false}), ascii = out({color: false, unicode: false})
+  const with_ = (review, findings = SAMPLE.findings) => ({review: {...SAMPLE.review, ...review}, findings})
+  const f = (severity, title, extra = {}) => ({severity, title, ...extra})
 
-  test('says unknown for a null completeness, no for false, shows a failure reason, and none without counts', () => {
-    assert.ok(renderReview(detail({complete: null}), URL_).includes('Complete: unknown'));
-    const failed = renderReview(detail({status: 'failed', complete: false, failure_reason: 'clone failed'}), URL_);
-    assert.ok(failed.includes('Complete: no') && failed.includes('Failure: clone failed'));
-    assert.ok(renderReview(detail({}), URL_).includes('Findings: none'));
-    assert.ok(renderReview(detail({counts_by_severity: {high: 0}}), URL_).includes('Findings: none'));
-  });
+  test('matches the approved sample exactly (colour on, unicode, width 80)', () => {
+    assert.equal(renderReview(SAMPLE, SAMPLE_URL, on).map(strip).join('\n'), SNAPSHOT)
+    assert.equal(renderReview(SAMPLE, SAMPLE_URL, off).join('\n'), SNAPSHOT.replace('   HIGH   ', '  [HIGH]  '))
+  })
+
+  test('never prints a price, with colour on or off', () => {
+    for (const o of [on, off, ascii]) {
+      const text = renderReview(SAMPLE, SAMPLE_URL, o).join('\n')
+      assert.doesNotMatch(text, /\$\s?\d/)
+      assert.ok(!text.includes('0.44'))
+    }
+  })
+
+  test('colour off: text badges and no escape codes', () => {
+    const lines = renderReview(SAMPLE, SAMPLE_URL, off)
+    assert.ok(lines.includes('  [HIGH]  Restore customer ownership filtering when loading order details'))
+    for (const l of lines) assert.ok(!l.includes('\x1b'), l)
+  })
+
+  test('ASCII: ok, a - rule and nothing above 0x7e', () => {
+    const lines = renderReview(SAMPLE, SAMPLE_URL, ascii)
+    assert.ok(lines[0].startsWith('  ok Review complete | 1 finding | 1m 54s'), lines[0])
+    assert.ok(lines.includes('  ' + '-'.repeat(60)))
+    assert.ok(lines.includes('    ... full summary in the console'))
+    for (const l of lines) assert.doesNotMatch(l, /[^\x00-\x7e]/, l)
+  })
+
+  test('headline per state', () => {
+    const head = (review, opts) => strip(renderReview(with_(review), SAMPLE_URL, on, opts)[0])
+    assert.match(head({complete: false, coverage: {incomplete: ['timed out']}}), /^  ! Review incomplete \(timed out\) · 1 finding · 1m 54s$/)
+    assert.match(head({complete: null, failure_reason: 'budget'}), /^  ! Review incomplete \(budget\)/)
+    assert.match(head({complete: false, coverage: null}), /^  ! Review incomplete · 1 finding/)
+    assert.equal(head({status: 'failed', complete: false, failure_reason: 'clone failed'}), '  ✖ Review failed (clone failed) · 1 finding · 1m 54s')
+    assert.equal(head({status: 'reviewing', complete: null, finished_at: null}, {waitedMs: 15_000}), '  ! Still running after 15s · 1 finding')
+    assert.equal(head({status: 'queued', complete: null, finished_at: null}, {now: Date.parse('2026-11-24T10:00:30Z')}), '  ! Still running after 30s · 1 finding')
+    assert.equal(head({finished_at: null}, {waitedMs: 72_000}), '  ✔ Review complete · 1 finding · 1m 12s')
+    assert.equal(head({finished_at: null}), '  ✔ Review complete · 1 finding')
+    assert.equal(strip(renderReview(with_({}, []), SAMPLE_URL, on)[0]), '  ✔ Review complete · 0 findings · 1m 54s')
+    assert.equal(strip(renderReview(with_({}, [f('low', 'a'), f('low', 'b')]), SAMPLE_URL, on)[0]), '  ✔ Review complete · 2 findings · 1m 54s')
+  })
+
+  test('the meta line: repo, pr and file count, each optional', () => {
+    const meta = review => strip(renderReview(with_(review), SAMPLE_URL, on)[1])
+    assert.equal(meta({pr: null}), '    delight-test/delight-store · 1 file reviewed')
+    assert.equal(meta({coverage: {reviewed: ['a', 'b']}}), '    delight-test/delight-store#7 · 2 files reviewed')
+    assert.equal(meta({coverage: null}), '    delight-test/delight-store#7')
+  })
+
+  test('no line is wider than the terminal, at 60, 80 and 120 (footer excepted)', () => {
+    const long = 'x'.repeat(300)
+    const d = with_({complete: false, coverage: {incomplete: ['r'.repeat(200)]}, summary: `Some words ${long} and more`}, [
+      f('high', `A title ${long}`, {description: `Text ${long} end`, source_location: {path: 'src/a.ts', line: 3}}),
+      f('s'.repeat(200), 'Odd severity', {description: 'd'}),
+    ])
+    for (const width of [60, 80, 120]) {
+      for (const full of [false, true]) {
+        const lines = renderReview(d, SAMPLE_URL, out({width}), {full})
+        assert.ok(lines.at(-1).includes(SAMPLE_URL))
+        for (const l of lines.slice(0, -1)) assert.ok(visible(l) <= width, `${width}: ${strip(l)}`)
+      }
+    }
+  })
+
+  test('a 200-char severity gets a badge of at most 8 characters', () => {
+    const lines = renderReview(with_({}, [f('z'.repeat(200), 'Odd')]), SAMPLE_URL, off)
+    assert.ok(lines.includes('  [ZZZZZZZZ]  Odd'), lines.join('\n'))
+    assert.ok(lines.includes('  Findings   1 zzzzzzzz'))
+  })
+
+  test('summary: 4 lines and a hint past 5, all 5 when exactly 5, all with full', () => {
+    const word = n => `w${n}`.padEnd(9, 'x')
+    const summary = n => Array.from({length: n * 7}, (_, i) => word(i)).join(' ') // 7 words of 9 = 69 columns a line at width 80
+    const block = (n, opts) => {
+      const lines = renderReview(with_({summary: summary(n)}, []), SAMPLE_URL, off, opts)
+      const at = lines.indexOf('  Summary')
+      return lines.slice(at + 1, lines.indexOf('', at))
+    }
+    assert.equal(block(6).length, 5)
+    assert.equal(block(6)[4], '    … full summary in the console')
+    assert.equal(block(5).length, 5)
+    assert.ok(!block(5).join('\n').includes('full summary'))
+    assert.equal(block(9, {full: true}).length, 9)
+    assert.ok(!block(9, {full: true}).join('\n').includes('full summary'))
+    assert.ok(!renderReview(with_({summary: ''}, []), SAMPLE_URL, off).includes('  Summary'))
+  })
+
+  test('description: 2 lines ending … unless full', () => {
+    const description = Array.from({length: 40}, () => 'word').join(' ')
+    const lines = renderReview(with_({summary: null}, [f('high', 'T', {description})]), SAMPLE_URL, off)
+    const at = lines.indexOf('  [HIGH]  T')
+    assert.deepEqual(lines.slice(at + 1, at + 4).map(l => l.slice(0, 10)), ['          ', '          ', ''])
+    assert.ok(lines[at + 2].endsWith('…') && visible(lines[at + 2]) <= 80)
+    const full = renderReview(with_({summary: null}, [f('high', 'T', {description})]), SAMPLE_URL, off, {full: true})
+    assert.equal(full.slice(full.indexOf('  [HIGH]  T') + 1, full.indexOf('', full.indexOf('  [HIGH]  T'))).join(' ').replace(/ +/g, ' ').trim(), description)
+  })
+
+  test('badge colour per severity', () => {
+    const lines = renderReview(with_({}, ['critical', 'high', 'medium', 'low', 'info'].map(s => f(s, s))), SAMPLE_URL, on)
+    const line = s => lines.find(l => strip(l).endsWith(`  ${s}`) && strip(l).includes(s.toUpperCase()))
+    assert.ok(line('critical').includes('\x1b[41;97m CRITICAL '))
+    assert.ok(line('high').includes('\x1b[31m HIGH '))
+    assert.ok(line('medium').includes('\x1b[33m'))
+    assert.ok(line('low').includes('\x1b[34m'))
+    assert.ok(line('info').includes('\x1b[90m'))
+    assert.equal(strip(lines.find(l => strip(l).startsWith('  Findings'))), '  Findings   1 critical  1 high  1 medium  1 low  1 info')
+  })
 
   test('sorts findings by severity, keeping order within one, and places each', () => {
-    const f = (severity, title) => ({severity, title});
-    const sorted = renderReview(detail({}, [f('low', 'A'), f('critical', 'B'), f('info', 'C'), f('high', 'D'), f('medium', 'E'), f('high', 'F')]), URL_).filter(l => l.startsWith('['));
-    assert.deepEqual(sorted, ['[critical] B', '[high] D', '[high] F', '[medium] E', '[low] A', '[info] C']);
-    const placed = renderReview(detail({}, [
+    const titles = renderReview(with_({}, [f('low', 'A'), f('critical', 'B'), f('info', 'C'), f('high', 'D'), f('medium', 'E'), f('high', 'F')]), SAMPLE_URL, off)
+      .filter(l => /^  \[/.test(l)).map(l => l.trim())
+    assert.deepEqual(titles, ['[CRITICAL]  B', '[HIGH]      D', '[HIGH]      F', '[MEDIUM]    E', '[LOW]       A', '[INFO]      C'])
+    const placed = renderReview(with_({}, [
       {severity: 'high', title: 'S', source_location: {path: 'src/a.ts', line: 12}, location: {type: 'file', path: 'other.ts', line: 1}},
       {severity: 'high', title: 'F', location: {type: 'file', path: 'src/b.ts', line: 3}},
       {severity: 'high', title: 'N', location: {type: 'file', path: 'src/c.ts', line: null}},
       {severity: 'high', title: 'E', location: {type: 'endpoint', path: '/api/x'}},
       {severity: 'high', title: 'P', location: {type: 'package', name: 'lodash'}},
       {severity: 'high', title: 'X', location: null},
-    ]), URL_).filter(l => l.startsWith('['));
-    assert.deepEqual(placed, ['[high] S — src/a.ts:12', '[high] F — src/b.ts:3', '[high] N — src/c.ts', '[high] E — /api/x', '[high] P — lodash', '[high] X']);
-  });
+    ]), SAMPLE_URL, off)
+    const after = t => placed[placed.indexOf(`  [HIGH]  ${t}`) + 1]
+    assert.deepEqual(['S', 'F', 'N', 'E', 'P', 'X'].map(after), ['          src/a.ts:12', '          src/b.ts:3', '          src/c.ts', '          /api/x', '          lodash', ''])
+  })
+
+  test('no findings: a No findings line and no Findings heading', () => {
+    const lines = renderReview(with_({}, []), SAMPLE_URL, on).map(strip)
+    assert.ok(lines.includes('  No findings'))
+    assert.ok(!lines.some(l => l.startsWith('  Findings')))
+  })
 
   test('drops escape and control characters from review text', () => {
-    const lines = renderReview(detail({summary: 'a\nb\u001b[2Kc', failure_reason: 'x\u009by'}, [{severity: 'high', title: '\u001b]8;;https://evil\u0007Click', source_location: {path: 'src/\u001b[1Aa.ts', line: 1}}]), URL_);
-    assert.ok(lines.includes('Summary: a b[2Kc'));
-    assert.ok(lines.includes('Failure: xy'));
-    assert.ok(lines.includes('[high] ]8;;https://evilClick — src/[1Aa.ts:1'));
-    for (const l of lines) assert.doesNotMatch(l, /[\u0000-\u001f\u007f-\u009f]/);
-  });
+    const d = with_({summary: 'a\nb\u001b[2Kc', failure_reason: 'x\u009by', status: 'failed', complete: false, repo: 'r\u001b[1Ao'},
+      [{severity: 'hi\u001bgh', title: '\u001b]8;;https://evil\u0007Click', source_location: {path: 'src/\u001b[1Aa.ts', line: 1}, description: 'd\u009b2Je'}])
+    const lines = renderReview(d, SAMPLE_URL, off)
+    assert.ok(lines.includes('    a b[2Kc'))
+    assert.ok(lines[0].startsWith('  ✖ Review failed (xy)'))
+    assert.ok(lines.some(l => l.endsWith(']8;;https://evilClick')))
+    assert.ok(lines.includes('          src/[1Aa.ts:1'))
+    assert.ok(lines.includes('          d2Je'))
+    for (const l of lines) assert.doesNotMatch(l, /[\u0000-\u001f\u007f-\u009f]/, l)
+  })
+
+  test('a bare review renders without undefined, NaN or a meta line', () => {
+    const lines = renderReview({review: {review_id: 'rev_1', status: 'done', complete: true}}, URL_, off)
+    const text = lines.join('\n')
+    assert.doesNotMatch(text, /undefined|NaN|null/)
+    assert.equal(lines[0], '  ✔ Review complete · 0 findings')
+    assert.equal(lines[1], '')
+    assert.equal(lines.at(-1), `  rev_1  ·  ${URL_}`)
+    const running = renderReview({review: {review_id: 'rev_1', status: 'reviewing'}, findings: []}, URL_, off, {now: 5})
+    assert.equal(running[0], '  ! Still running · 0 findings')
+  })
+
+  test('the URL is printed once, in the footer', () => {
+    const text = renderReview(SAMPLE, SAMPLE_URL, on).join('\n')
+    assert.equal(text.split(SAMPLE_URL).length - 1, 1)
+  })
 
   test('reviewJson escapes C1 controls and stays the same JSON', () => {
     const data = {findings: [{severity: 'high', title: 'a\u009b2Jb\u007f', summary: 'x\u001by'}]};
@@ -356,6 +515,36 @@ describe('renderReview', () => {
     assert.ok(lines.includes('See it later: zof review show rev_1'));
     assert.equal(lines.at(-1), `Open in console: ${URL_}`);
   });
+
+describe('progressText', () => {
+  const uni = {out() {}, err() {}, color: true, unicode: true, width: 80}
+  const asc = {...uni, unicode: false}
+  const reviewing = lenses => ({review: {review_id: 'rev_1', status: 'reviewing', lenses}, findings: []})
+  const five = ['done', 'done', 'reviewing', 'failed', 'queued'].map((status, i) => ({profile: `lens${i}`, status}))
+
+  test('plain lines', () => {
+    assert.equal(progressText(null, 0, asc, false), 'Queued | 0s')
+    assert.equal(progressText({review: {review_id: 'r', status: 'queued'}, findings: []}, 3000, uni, false), 'Queued · 3s')
+    assert.equal(progressText(reviewing(five), 72_000, uni, false), 'Reviewing · 2 of 5 lenses done · 1m 12s')
+    assert.equal(progressText(reviewing(null), 72_000, uni, false), 'Reviewing · 1m 12s')
+  })
+
+  test('live lines', () => {
+    assert.equal(progressText(reviewing(null), 72_000, uni, true), 'Reviewing   1m 12s')
+    assert.equal(progressText(reviewing(five), 72_000, uni, true), 'Reviewing  lens0 ✔  lens1 ✔  lens2 …  lens3 !  lens4 …   1m 12s')
+    assert.equal(progressText(reviewing(five.slice(0, 1)), 1000, asc, true), 'Reviewing  lens0 ok   1s')
+    const cut = progressText(reviewing(five), 72_000, uni, true, 35)
+    assert.ok(visible(cut) <= 35, cut)
+    assert.ok(!cut.includes('\x1b'))
+  })
+
+  test('lens names are cleaned', () => {
+    for (const live of [true, false]) {
+      const s = progressText(reviewing([{profile: 'a\nb\u001b[2K', status: 'done\u0007'}]), 0, uni, live)
+      assert.doesNotMatch(s, /[\n\x1b\u0007]/)
+    }
+  })
+})
 });
 
 describe('startReview', () => {
@@ -533,6 +722,8 @@ describe('terminal output', () => {
   test('fit cuts with the marker', () => {
     assert.equal(fit('abcdef', 4, '…'), 'abc…');
     assert.equal(fit('ab', 4, '…'), 'ab');
+    assert.ok(fit('abcdef', 1, '...').length <= 1);
+    assert.equal(fit('abcdef', 2, '...'), '..');
   });
 
   test('elapsed shows whole seconds', () => {
@@ -555,6 +746,8 @@ describe('terminal output', () => {
     const joined = t.writes.join('');
     assert.ok(joined.includes('\r\x1b[2Khi\n'));
     s.stop(); s.stop();
+    s.print('late');
+    assert.equal(t.writes.at(-1), 'late\n');
     assert.equal(t.writes.join('').split('\x1b[?25h').length - 1, 1);
     assert.equal(t.cancels, 1);
     assert.equal(t.sigint, null);

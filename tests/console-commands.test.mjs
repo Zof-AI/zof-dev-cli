@@ -270,7 +270,7 @@ describe('zof review', () => {
   test('--wait polls to done and exits 0 only for a complete review', async () => {
     const r = await run('review', ['https://github.com/acme/web/pull/42', '--wait'], {routes: {'GET /api/run/refs': ref, 'POST /api/reviews': started, [`GET /api/reviews/${REV}`]: [detail('reviewing', null), detail('done', true)]}});
     assert.equal(r.code, 0, r.err);
-    assert.match(r.out, /\[high\] SQL injection — src\/db\.ts:9/);
+    assert.match(r.out, /^  \[HIGH\]  SQL injection\n {10}src\/db\.ts:9$/m);
     const incomplete = await run('review', ['https://github.com/acme/web/pull/42', '--wait', '--json'], {routes: {'GET /api/run/refs': ref, 'POST /api/reviews': started, [`GET /api/reviews/${REV}`]: detail('done', false)}});
     assert.equal(incomplete.code, 1);
     assert.equal(JSON.parse(incomplete.out).timed_out, false);

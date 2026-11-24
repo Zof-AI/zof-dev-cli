@@ -55,6 +55,7 @@ export const start: Command = {
     }
 
     const path = `/api/reviews/${encodeURIComponent(started.review_id)}`;
+    const waitStart = ctx.deps.now();
     const {detail, timedOut} = await waitForReview(
       remainingMs => client.get<ReviewDetail>(path, {timeout: Math.max(1, Math.min(30_000, remainingMs))}),
       {timeoutMs: timeoutS * 1000, now: ctx.deps.now, sleep: ctx.deps.sleep},
@@ -63,7 +64,8 @@ export const start: Command = {
       o.out(reviewJson(detail ? {...detail, timed_out: timedOut} : {review_id: started.review_id, url, timed_out: true}));
     } else {
       o.out('');
-      for (const line of detail ? renderReview(detail, url) : renderNoAnswer(started.review_id, url)) o.out(`  ${line}`);
+      if (detail) for (const line of renderReview(detail, url, o, {waitedMs: ctx.deps.now() - waitStart})) o.out(line);
+      else for (const line of renderNoAnswer(started.review_id, url)) o.out(`  ${line}`);
       if (timedOut) warn(o, `Timed out after ${timeoutS}s; the review is still running. See it later: zof review show ${started.review_id}`);
     }
 
@@ -81,7 +83,7 @@ export const show: Command = {
     const client = await ctx.authed();
     const detail = await client.get<ReviewDetail>(`/api/reviews/${id}`);
     if (ctx.json) ctx.o.out(reviewJson(detail));
-    else for (const line of renderReview(detail, reviewUrl(client.baseUrl, id))) ctx.o.out(`  ${line}`);
+    else for (const line of renderReview(detail, reviewUrl(client.baseUrl, id), ctx.o, {now: ctx.deps.now()})) ctx.o.out(line);
     // A queued or running review is not done: 1.
     return reviewExitCode(detail, false);
   },
